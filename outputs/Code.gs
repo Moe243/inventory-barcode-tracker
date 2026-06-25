@@ -39,6 +39,10 @@ function apiGetInventory(password) {
   return handleApiAction_('getInventory', password, {});
 }
 
+function apiGetInitialData(password) {
+  return handleApiAction_('getInitialData', password, {});
+}
+
 function apiAddOrUpdateRug(password, rug) {
   return handleApiAction_('addOrUpdateRug', password, { rug });
 }
@@ -59,13 +63,15 @@ function apiImportInventory(password, rows) {
   return handleApiAction_('importInventory', password, { rows });
 }
 
-function apiGetTransactions(password) {
-  return handleApiAction_('getTransactions', password, {});
+function apiGetTransactions(password, limit) {
+  return handleApiAction_('getTransactions', password, { limit });
 }
 
 function getInventory() {
-  setupSheetsQuietly_();
   const sheet = getInventorySheet_();
+  if (!sheet) {
+    return { success: true, message: 'Inventory loaded.', inventory: [] };
+  }
   const values = sheet.getDataRange().getValues();
   if (values.length <= 1) {
     return { success: true, message: 'Inventory loaded.', inventory: [] };
@@ -79,15 +85,36 @@ function getInventory() {
   return { success: true, message: 'Inventory loaded.', inventory: rows };
 }
 
+function getInitialData() {
+  const inventoryResponse = getInventory();
+  if (!inventoryResponse.success) return inventoryResponse;
+
+  const transactionResponse = getTransactions(75);
+  return {
+    success: true,
+    message: 'Inventory loaded.',
+    inventory: inventoryResponse.inventory || [],
+    transactions: transactionResponse.transactions || []
+  };
+}
+
 function addOrUpdateRug(rug) {
   return withLock_(() => {
     setupSheetsQuietly_();
+    const sheet = getInventorySheet_();
     const clean = normalizeRug_(rug);
-    if (!clean.SKU) clean.SKU = generateNextSku_();
+    if (!clean.SKU) clean.SKU = generateNextSku_(sheet, clean);
     validateRug_(clean);
 
-    const sheet = getInventorySheet_();
     const rowNumber = findRowBySku_(sheet, clean.SKU);
+    const duplicateRowNumber = findRowByIdentity_(sheet, clean, clean.SKU);
+    if (duplicateRowNumber) {
+      const duplicate = getRugByRow_(sheet, duplicateRowNumber);
+      return {
+        success: false,
+        message: `Duplicate rug found: ${duplicate.SKU}. Edit that SKU instead of creating another.`
+      };
+    }
     const now = new Date();
     const mode = String(rug.mode || 'add').toLowerCase();
 
@@ -111,7 +138,7 @@ function addOrUpdateRug(rug) {
 
       writeInventoryRow_(sheet, rowNumber, updated);
       logTransaction_('ADD_OR_UPDATE', clean.SKU, newQuantity - previousQuantity, previousQuantity, newQuantity, rug.notes || '');
-      return { success: true, message: 'Rug updated.', sku: clean.SKU };
+      return { success: true, message: 'Rug updated.', sku: clean.SKU, rug: serializeRug_(updated) };
     }
 
     const created = {
@@ -128,7 +155,7 @@ function addOrUpdateRug(rug) {
 
     sheet.appendRow(inventoryObjectToRow_(created));
     logTransaction_('CREATE', clean.SKU, created.Quantity, 0, created.Quantity, rug.notes || '');
-    return { success: true, message: 'Rug added.', sku: clean.SKU };
+    return { success: true, message: 'Rug added.', sku: clean.SKU, rug: serializeRug_(created) };
   });
 }
 
@@ -141,6 +168,14 @@ function updateRug(rug) {
     const sheet = getInventorySheet_();
     const rowNumber = findRowBySku_(sheet, clean.SKU);
     if (!rowNumber) throw new Error('SKU not found.');
+    const duplicateRowNumber = findRowByIdentity_(sheet, clean, clean.SKU);
+    if (duplicateRowNumber && duplicateRowNumber !== rowNumber) {
+      const duplicate = getRugByRow_(sheet, duplicateRowNumber);
+      return {
+        success: false,
+        message: `Duplicate rug found: ${duplicate.SKU}. Edit that SKU instead of creating another.`
+      };
+    }
 
     const existing = getRugByRow_(sheet, rowNumber);
     const updated = {
@@ -157,7 +192,7 @@ function updateRug(rug) {
 
     if (Number.isNaN(updated.Quantity) || updated.Quantity < 0) throw new Error('Quantity must be zero or more.');
     writeInventoryRow_(sheet, rowNumber, updated);
-    return { success: true, message: 'Rug details saved.', sku: clean.SKU };
+    return { success: true, message: 'Rug details saved.', sku: clean.SKU, rug: serializeRug_(updated) };
   });
 }
 
@@ -182,7 +217,7 @@ function adjustQuantity(sku, quantityChange, notes) {
     writeInventoryRow_(sheet, rowNumber, existing);
     logTransaction_(quantityChange > 0 ? 'RECEIVE' : 'REMOVE', cleanSku, quantityChange, previousQuantity, newQuantity, notes || '');
 
-    return { success: true, message: 'Quantity adjusted.', sku: cleanSku, previousQuantity, newQuantity };
+    return { success: true, message: 'Quantity adjusted.', sku: cleanSku, previousQuantity, newQuantity, rug: serializeRug_(existing) };
   });
 }
 
@@ -211,14 +246,20 @@ function importInventory(rows) {
 
     let added = 0;
     let updated = 0;
+    let skipped = 0;
+    const sheet = getInventorySheet_();
 
     rows.forEach(row => {
       const clean = normalizeRug_(row);
-      if (!clean.SKU) clean.SKU = generateNextSku_();
+      if (!clean.SKU) clean.SKU = generateNextSku_(sheet, clean);
       validateRug_(clean);
 
-      const sheet = getInventorySheet_();
       const rowNumber = findRowBySku_(sheet, clean.SKU);
+      const duplicateRowNumber = findRowByIdentity_(sheet, clean, clean.SKU);
+      if (duplicateRowNumber) {
+        skipped++;
+        return;
+      }
       const now = new Date();
 
       if (rowNumber) {
@@ -255,21 +296,25 @@ function importInventory(rows) {
       }
     });
 
-    return { success: true, message: `Import complete. Added ${added}, updated ${updated}.`, added, updated };
+    return { success: true, message: `Import complete. Added ${added}, updated ${updated}, skipped ${skipped} duplicates.`, added, updated, skipped };
   });
 }
 
-function getTransactions() {
-  setupSheetsQuietly_();
+function getTransactions(limit) {
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(CONFIG.TRANSACTIONS_SHEET);
+  if (!sheet) {
+    return { success: true, message: 'Transactions loaded.', transactions: [] };
+  }
   const values = sheet.getDataRange().getValues();
   if (values.length <= 1) {
     return { success: true, message: 'Transactions loaded.', transactions: [] };
   }
 
   const headers = values[0];
+  const maxRows = Math.max(1, Number(limit || 75));
   const transactions = values.slice(1)
     .filter(row => row.some(cell => String(cell || '').trim()))
+    .slice(-maxRows)
     .map(row => rowToObject_(headers, row))
     .reverse();
 
@@ -346,6 +391,19 @@ function findRowBySku_(sheet, sku) {
   return null;
 }
 
+function findRowByIdentity_(sheet, rug, excludedSku) {
+  if (!sheet || sheet.getLastRow() < 2) return null;
+  const cleanExcludedSku = String(excludedSku || '').trim().toUpperCase();
+  const values = sheet.getRange(2, 1, sheet.getLastRow() - 1, CONFIG.INVENTORY_HEADERS.length).getValues();
+
+  for (let i = 0; i < values.length; i++) {
+    const existing = rowToObject_(CONFIG.INVENTORY_HEADERS, values[i]);
+    if (String(existing.SKU || '').trim().toUpperCase() === cleanExcludedSku) continue;
+    if (identityKey_(existing) === identityKey_(rug)) return i + 2;
+  }
+  return null;
+}
+
 function getRugByRow_(sheet, rowNumber) {
   const values = sheet.getRange(rowNumber, 1, 1, CONFIG.INVENTORY_HEADERS.length).getValues()[0];
   return rowToObject_(CONFIG.INVENTORY_HEADERS, values);
@@ -397,17 +455,53 @@ function validateRug_(rug) {
   if (!Number.isFinite(rug.Quantity) || rug.Quantity < 0) throw new Error('Quantity must be zero or more.');
 }
 
-function generateNextSku_() {
-  const sheet = getInventorySheet_();
-  if (!sheet || sheet.getLastRow() < 2) return 'RUG-0001';
+function generateNextSku_(sheet, rug) {
+  const nextNumber = getNextRugNumber_(sheet);
+  return [
+    `RUG${nextNumber}`,
+    skuPart_(rug.Name),
+    skuPart_(rug.Design),
+    skuPart_(rug.Size),
+    skuPart_(rug.Color)
+  ].filter(Boolean).join('-');
+}
+
+function getNextRugNumber_(sheet) {
+  if (!sheet || sheet.getLastRow() < 2) return 1;
 
   const values = sheet.getRange(2, 1, sheet.getLastRow() - 1, 1).getValues().flat();
   const maxNumber = values.reduce((max, sku) => {
-    const match = String(sku || '').match(/^RUG-(\d+)$/i);
+    const match = String(sku || '').match(/^RUG-?(\d+)/i);
     return match ? Math.max(max, Number(match[1])) : max;
   }, 0);
 
-  return `RUG-${String(maxNumber + 1).padStart(4, '0')}`;
+  return maxNumber + 1;
+}
+
+function skuPart_(value) {
+  return String(value || '')
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '');
+}
+
+function identityKey_(rug) {
+  return [
+    rug.Name,
+    rug.Design,
+    rug.Size,
+    rug.Color
+  ].map(value => String(value || '').trim().toUpperCase()).join('|');
+}
+
+function serializeRug_(rug) {
+  return CONFIG.INVENTORY_HEADERS.reduce((object, header) => {
+    const value = rug[header];
+    object[header] = value instanceof Date ? value.toISOString() : value;
+    return object;
+  }, {});
 }
 
 function logTransaction_(action, sku, quantityChange, previousQuantity, newQuantity, notes) {
@@ -446,6 +540,8 @@ function handleApiAction_(action, password, body) {
     switch (action) {
       case 'getInventory':
         return getInventory();
+      case 'getInitialData':
+        return getInitialData();
       case 'addOrUpdateRug':
         return addOrUpdateRug(body.rug || {});
       case 'updateRug':
@@ -457,7 +553,7 @@ function handleApiAction_(action, password, body) {
       case 'importInventory':
         return importInventory(body.rows || []);
       case 'getTransactions':
-        return getTransactions();
+        return getTransactions(body.limit);
       default:
         return { success: false, message: 'Unknown action.' };
     }

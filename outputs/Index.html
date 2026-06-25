@@ -620,8 +620,9 @@
                 <option value="replace">Replace existing quantity with entered quantity</option>
               </select>
             </label>
-            <div class="full">
-              <button type="submit">Save rug</button>
+            <div class="full button-row">
+              <button type="submit" name="saveMode" value="same">Save and add same name/design</button>
+              <button type="submit" name="saveMode" value="new" class="secondary">Save and add new rug</button>
             </div>
           </form>
         </div>
@@ -874,11 +875,10 @@
       };
       const response = await api('addOrUpdateRug', { rug });
       if (response.success) {
-        event.currentTarget.reset();
-        event.currentTarget.quantity.value = 0;
+        upsertLocalRug(response.rug);
         if (response.sku) state.labelSelection[response.sku] = 1;
-        await loadAll();
-        switchTab('dashboard');
+        resetAddForm(event.currentTarget, event.submitter && event.submitter.value);
+        renderAllInventoryViews();
       }
       showNotice(response.message, !response.success);
     });
@@ -910,8 +910,9 @@
       });
 
       if (response.success) {
+        upsertLocalRug(response.rug);
         closeEditModal();
-        await loadAll();
+        renderAllInventoryViews();
       }
       showNotice(response.message, !response.success);
     });
@@ -923,24 +924,16 @@
 
     async function loadAll() {
       showNotice('Loading inventory...');
-      const inventoryResponse = await api('getInventory');
-      if (!inventoryResponse.success) {
-        showNotice(inventoryResponse.message, true);
+      const response = await api('getInitialData');
+      if (!response.success) {
+        showNotice(response.message, true);
         return;
       }
 
-      state.inventory = inventoryResponse.inventory || [];
-      syncDashboardFilters();
-      renderDashboard();
-      renderScanOptions();
-      renderLabelPicker();
-      renderBarcodes();
-
-      const transactionResponse = await api('getTransactions');
-      if (transactionResponse.success) {
-        state.transactions = transactionResponse.transactions || [];
-        renderTransactions();
-      }
+      state.inventory = response.inventory || [];
+      state.transactions = response.transactions || [];
+      renderAllInventoryViews();
+      renderTransactions();
 
       showNotice('Inventory loaded.');
     }
@@ -965,11 +958,14 @@
           case 'validatePassword':
             runner.validatePassword(state.password);
             break;
+          case 'getInitialData':
+            runner.apiGetInitialData(state.password);
+            break;
           case 'getInventory':
             runner.apiGetInventory(state.password);
             break;
           case 'getTransactions':
-            runner.apiGetTransactions(state.password);
+            runner.apiGetTransactions(state.password, payload.limit || 75);
             break;
           case 'addOrUpdateRug':
             runner.apiAddOrUpdateRug(state.password, payload.rug || {});
@@ -999,7 +995,24 @@
       if (tabName !== 'adjust') stopScanner();
       if (tabName === 'adjust') renderScanOptions();
       if (tabName === 'barcodes') renderBarcodes();
-      if (tabName === 'transactions') renderTransactions();
+      if (tabName === 'transactions') loadTransactions();
+    }
+
+    async function loadTransactions() {
+      const response = await api('getTransactions', { limit: 75 });
+      if (response.success) {
+        state.transactions = response.transactions || [];
+        renderTransactions();
+      } else {
+        showNotice(response.message, true);
+      }
+    }
+
+    function renderAllInventoryViews() {
+      syncDashboardFilters();
+      renderDashboard();
+      renderScanOptions();
+      renderLabelPicker();
     }
 
     function renderDashboard() {
@@ -1029,6 +1042,35 @@
           </td>
         </tr>
       `).join('') || '<tr><td colspan="7">No rugs found.</td></tr>';
+    }
+
+    function upsertLocalRug(rug) {
+      if (!rug || !rug.SKU) return;
+      const index = state.inventory.findIndex(item => item.SKU === rug.SKU);
+      if (index >= 0) {
+        state.inventory.splice(index, 1, rug);
+      } else {
+        state.inventory.push(rug);
+      }
+    }
+
+    function removeLocalRug(sku) {
+      const cleanSku = String(sku || '').trim().toUpperCase();
+      state.inventory = state.inventory.filter(rug => String(rug.SKU || '').toUpperCase() !== cleanSku);
+    }
+
+    function resetAddForm(form, saveMode) {
+      const keepName = form.elements.name.value;
+      const keepDesign = form.elements.design.value;
+      form.reset();
+      form.elements.quantity.value = 0;
+      if (saveMode === 'same') {
+        form.elements.name.value = keepName;
+        form.elements.design.value = keepDesign;
+        form.elements.size.focus();
+      } else {
+        form.elements.name.focus();
+      }
     }
 
     function syncDashboardFilters() {
@@ -1249,7 +1291,8 @@
       if (response.success) {
         state.pendingScanCount = 0;
         event.currentTarget.reset();
-        await loadAll();
+        upsertLocalRug(response.rug);
+        renderAllInventoryViews();
       }
       showScanNotice(response.message, !response.success);
       showNotice(response.message, !response.success);
@@ -1343,12 +1386,12 @@
       const rug = findRug(sku);
       if (!rug) return;
       const form = $('#editForm');
-      form.sku.value = rug.SKU;
-      form.name.value = rug.Name;
-      form.design.value = rug.Design || '';
-      form.size.value = rug.Size;
-      form.color.value = rug.Color;
-      form.quantity.value = Number(rug.Quantity || 0);
+      form.elements.sku.value = rug.SKU;
+      form.elements.name.value = rug.Name;
+      form.elements.design.value = rug.Design || '';
+      form.elements.size.value = rug.Size;
+      form.elements.color.value = rug.Color;
+      form.elements.quantity.value = Number(rug.Quantity || 0);
       $('#editModal').classList.add('open');
     }
 
@@ -1362,14 +1405,20 @@
         quantityChange,
         notes: quantityChange > 0 ? 'Quick add from dashboard' : 'Quick remove from dashboard'
       });
-      if (response.success) await loadAll();
+      if (response.success) {
+        upsertLocalRug(response.rug);
+        renderAllInventoryViews();
+      }
       showNotice(response.message, !response.success);
     }
 
     async function deleteSku(sku) {
       if (!confirm(`Delete ${sku}? This removes it from Inventory.`)) return;
       const response = await api('deleteRug', { sku });
-      if (response.success) await loadAll();
+      if (response.success) {
+        removeLocalRug(sku);
+        renderAllInventoryViews();
+      }
       showNotice(response.message, !response.success);
     }
 
