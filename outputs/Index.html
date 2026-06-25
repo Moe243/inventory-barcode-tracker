@@ -6,6 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Lotus Rugs Inventory</title>
   <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@zxing/browser@0.1.5/umd/zxing-browser.min.js"></script>
   <style>
     :root {
       --ink: #18212f;
@@ -182,7 +183,7 @@
 
     .metrics {
       display: grid;
-      grid-template-columns: repeat(4, minmax(0, 1fr));
+      grid-template-columns: repeat(5, minmax(0, 1fr));
       gap: 12px;
       margin-bottom: 14px;
     }
@@ -222,8 +223,11 @@
     }
 
     .toolbar,
+    .filter-grid,
     .form-grid,
-    .adjust-grid {
+    .adjust-grid,
+    .scan-grid,
+    .label-picker-grid {
       display: grid;
       gap: 12px;
       align-items: end;
@@ -234,12 +238,26 @@
       margin-bottom: 12px;
     }
 
+    .filter-grid {
+      grid-template-columns: minmax(220px, 1fr) repeat(3, minmax(160px, 220px));
+      margin-bottom: 12px;
+    }
+
     .form-grid {
       grid-template-columns: repeat(5, minmax(0, 1fr));
     }
 
     .adjust-grid {
       grid-template-columns: 1fr 160px 160px;
+    }
+
+    .scan-grid {
+      grid-template-columns: minmax(220px, 1fr) minmax(220px, 1fr) 160px;
+    }
+
+    .label-picker-grid {
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      margin-bottom: 12px;
     }
 
     .full {
@@ -312,11 +330,57 @@
       gap: 4px;
     }
 
+    .count-box {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #f8fafc;
+      padding: 16px;
+      margin: 12px 0;
+      display: grid;
+      gap: 12px;
+    }
+
+    .count-number {
+      font-size: 42px;
+      font-weight: 800;
+      line-height: 1;
+    }
+
+    .button-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .scanner-frame {
+      background: #0f172a;
+      border-radius: 8px;
+      overflow: hidden;
+      margin-top: 12px;
+    }
+
+    .scanner-frame video {
+      display: block;
+      width: 100%;
+      max-height: 380px;
+      background: #0f172a;
+    }
+
+    .muted {
+      color: var(--muted);
+      font-size: 13px;
+    }
+
     .barcode-actions {
       display: flex;
       justify-content: space-between;
       gap: 12px;
       align-items: center;
+      margin-bottom: 12px;
+    }
+
+    .label-controls {
       margin-bottom: 12px;
     }
 
@@ -380,8 +444,11 @@
 
     @media (max-width: 850px) {
       .metrics,
+      .filter-grid,
       .form-grid,
       .adjust-grid,
+      .scan-grid,
+      .label-picker-grid,
       .toolbar {
         grid-template-columns: 1fr;
       }
@@ -400,6 +467,7 @@
       .topbar,
       .tabs,
       .barcode-actions,
+      .label-controls,
       .section:not(.print-section),
       .notice {
         display: none !important;
@@ -462,7 +530,7 @@
       <nav class="tabs" aria-label="Inventory sections">
         <button class="tab active" data-tab="dashboard" type="button">Dashboard</button>
         <button class="tab" data-tab="add" type="button">Add Rug</button>
-        <button class="tab" data-tab="adjust" type="button">Receive / Remove</button>
+        <button class="tab" data-tab="adjust" type="button">Scan / Count</button>
         <button class="tab" data-tab="import" type="button">Import CSV</button>
         <button class="tab" data-tab="barcodes" type="button">Barcodes</button>
         <button class="tab" data-tab="transactions" type="button">Transactions</button>
@@ -474,14 +542,29 @@
         <div class="metrics">
           <div class="metric"><span>Total Rugs</span><strong id="totalRugs">0</strong></div>
           <div class="metric"><span>Unique SKUs</span><strong id="uniqueSkus">0</strong></div>
+          <div class="metric"><span>Designs</span><strong id="designCount">0</strong></div>
           <div class="metric"><span>Sizes</span><strong id="sizeCount">0</strong></div>
           <div class="metric"><span>Colors</span><strong id="colorCount">0</strong></div>
         </div>
 
         <div class="section">
-          <div class="toolbar">
+          <div class="filter-grid">
             <label>Search inventory
-              <input id="searchInput" type="search" placeholder="SKU, name, size, or color">
+              <input id="searchInput" type="search" placeholder="SKU, design, size, or color">
+            </label>
+            <label>Design
+              <select id="designFilter"></select>
+            </label>
+            <label>Size
+              <select id="sizeFilter"></select>
+            </label>
+            <label>Color
+              <select id="colorFilter"></select>
+            </label>
+          </div>
+          <div class="toolbar">
+            <label>Visible rows
+              <input id="visibleCount" readonly>
             </label>
             <button id="exportBtn" class="secondary" type="button">Export CSV</button>
             <button id="newRugBtn" type="button">New rug</button>
@@ -491,7 +574,7 @@
               <thead>
                 <tr>
                   <th>SKU</th>
-                  <th>Name</th>
+                  <th>Design</th>
                   <th>Size</th>
                   <th>Color</th>
                   <th>Quantity</th>
@@ -511,7 +594,7 @@
             <label>SKU
               <input name="sku" placeholder="Leave blank for auto SKU">
             </label>
-            <label>Name / Description
+            <label>Design
               <input name="name" required>
             </label>
             <label>Size
@@ -521,7 +604,7 @@
               <input name="color" required>
             </label>
             <label>Quantity
-              <input name="quantity" type="number" min="0" step="1" value="1" required>
+              <input name="quantity" type="number" min="0" step="1" value="0" required>
             </label>
             <label class="full">Existing SKU behavior
               <select name="mode">
@@ -538,30 +621,47 @@
 
       <section id="adjust" class="panel">
         <div class="section">
-          <h2>Receive / Remove</h2>
-          <div class="adjust-grid">
-            <label>SKU
-              <input id="adjustSku" placeholder="Enter or scan SKU">
+          <h2>Scan / Count</h2>
+          <div class="scan-grid">
+            <label>Find SKU by design, size, color, or SKU
+              <input id="scanSearch" placeholder="Search before counting">
             </label>
-            <button id="lookupBtn" class="secondary" type="button">Lookup</button>
-            <button id="clearAdjustBtn" class="secondary" type="button">Clear</button>
-          </div>
-          <div id="lookupResult" class="rug-card" hidden></div>
-          <form id="adjustForm" class="form-grid">
-            <label>Quantity
-              <input name="quantity" type="number" min="1" step="1" value="1" required>
+            <label>Target SKU
+              <select id="scanSkuSelect"></select>
             </label>
             <label>Action
-              <select name="direction">
-                <option value="receive">Add quantity</option>
-                <option value="remove">Remove quantity</option>
+              <select id="scanDirection">
+                <option value="receive">Receive</option>
+                <option value="remove">Remove</option>
               </select>
             </label>
+          </div>
+          <div id="scanTargetCard" class="rug-card"></div>
+          <div class="count-box">
+            <div>
+              <span class="muted">Pending scan count</span>
+              <div id="pendingCount" class="count-number">0</div>
+            </div>
+            <div class="button-row">
+              <button id="manualCountBtn" type="button">Count one</button>
+              <button id="undoCountBtn" class="secondary" type="button">Undo</button>
+              <button id="resetCountBtn" class="secondary" type="button">Reset count</button>
+            </div>
+            <div class="button-row">
+              <button id="startScannerBtn" type="button">Start camera scanner</button>
+              <button id="stopScannerBtn" class="secondary" type="button" disabled>Stop scanner</button>
+            </div>
+            <div id="scanNotice" class="notice"></div>
+            <div class="scanner-frame">
+              <video id="scannerVideo" muted playsinline></video>
+            </div>
+          </div>
+          <form id="scanSubmitForm" class="form-grid">
             <label class="full">Notes
-              <textarea name="notes" rows="3" placeholder="Receiving, customer hold, damage, sold, etc."></textarea>
+              <textarea name="notes" rows="3" placeholder="Receiving count, removal count, stock check, etc."></textarea>
             </label>
             <div class="full">
-              <button type="submit">Submit adjustment</button>
+              <button type="submit">Submit scanned count</button>
             </div>
           </form>
         </div>
@@ -570,7 +670,7 @@
       <section id="import" class="panel">
         <div class="section">
           <h2>Import CSV</h2>
-          <label>CSV file with headers: sku,name,size,color,quantity
+          <label>CSV file with headers: sku,design,size,color,quantity
             <input id="csvFile" type="file" accept=".csv,text/csv">
           </label>
           <div class="toolbar">
@@ -582,7 +682,7 @@
               <thead>
                 <tr>
                   <th>SKU</th>
-                  <th>Name</th>
+                  <th>Design</th>
                   <th>Size</th>
                   <th>Color</th>
                   <th>Quantity</th>
@@ -599,6 +699,33 @@
           <div class="barcode-actions">
             <h2>Barcode Labels</h2>
             <button id="printBtn" type="button">Print labels</button>
+          </div>
+          <div class="label-controls">
+            <div class="label-picker-grid">
+              <label>Filter labels
+                <input id="labelSearch" type="search" placeholder="SKU, design, size, or color">
+              </label>
+              <label>Default labels per SKU
+                <input id="defaultLabelCount" type="number" min="1" step="1" value="1">
+              </label>
+              <button id="selectVisibleLabelsBtn" type="button">Select visible</button>
+              <button id="clearLabelSelectionBtn" class="secondary" type="button">Clear labels</button>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Print</th>
+                    <th>SKU</th>
+                    <th>Design</th>
+                    <th>Size</th>
+                    <th>Color</th>
+                    <th>Label Count</th>
+                  </tr>
+                </thead>
+                <tbody id="labelPickerBody"></tbody>
+              </table>
+            </div>
           </div>
           <div id="labels" class="labels"></div>
         </div>
@@ -635,7 +762,7 @@
         <label>SKU
           <input name="sku" readonly>
         </label>
-        <label>Name
+        <label>Design
           <input name="name" required>
         </label>
         <label>Size
@@ -661,7 +788,13 @@
       inventory: [],
       transactions: [],
       csvRows: [],
-      currentTab: 'dashboard'
+      currentTab: 'dashboard',
+      pendingScanCount: 0,
+      lastScannedCode: '',
+      lastScanAt: 0,
+      scannerControls: null,
+      scannerReader: null,
+      labelSelection: {}
     };
 
     const $ = selector => document.querySelector(selector);
@@ -691,10 +824,27 @@
 
     $('#refreshBtn').addEventListener('click', loadAll);
     $('#searchInput').addEventListener('input', renderDashboard);
+    $('#designFilter').addEventListener('change', renderDashboard);
+    $('#sizeFilter').addEventListener('change', renderDashboard);
+    $('#colorFilter').addEventListener('change', renderDashboard);
     $('#exportBtn').addEventListener('click', exportCsv);
     $('#newRugBtn').addEventListener('click', () => switchTab('add'));
     $('#printBtn').addEventListener('click', () => window.print());
     $('#inventoryBody').addEventListener('click', handleInventoryAction);
+    $('#scanSearch').addEventListener('input', renderScanOptions);
+    $('#scanSkuSelect').addEventListener('change', renderScanTarget);
+    $('#scanDirection').addEventListener('change', renderScanTarget);
+    $('#manualCountBtn').addEventListener('click', () => incrementPendingCount(getSelectedScanSku(), 'Manual count added.'));
+    $('#undoCountBtn').addEventListener('click', undoPendingCount);
+    $('#resetCountBtn').addEventListener('click', resetPendingCount);
+    $('#startScannerBtn').addEventListener('click', startScanner);
+    $('#stopScannerBtn').addEventListener('click', stopScanner);
+    $('#scanSubmitForm').addEventListener('submit', submitScannedCount);
+    $('#labelSearch').addEventListener('input', renderLabelPicker);
+    $('#defaultLabelCount').addEventListener('change', renderLabelPicker);
+    $('#selectVisibleLabelsBtn').addEventListener('click', selectVisibleLabels);
+    $('#clearLabelSelectionBtn').addEventListener('click', clearLabelSelection);
+    $('#labelPickerBody').addEventListener('change', handleLabelPickerChange);
 
     $('#addForm').addEventListener('submit', async event => {
       event.preventDefault();
@@ -710,43 +860,10 @@
       const response = await api('addOrUpdateRug', { rug });
       if (response.success) {
         event.currentTarget.reset();
-        event.currentTarget.quantity.value = 1;
+        event.currentTarget.quantity.value = 0;
+        if (response.sku) state.labelSelection[response.sku] = 1;
         await loadAll();
         switchTab('dashboard');
-      }
-      showNotice(response.message, !response.success);
-    });
-
-    $('#lookupBtn').addEventListener('click', renderLookup);
-    $('#adjustSku').addEventListener('input', renderLookup);
-    $('#clearAdjustBtn').addEventListener('click', () => {
-      $('#adjustSku').value = '';
-      $('#lookupResult').hidden = true;
-    });
-
-    $('#adjustForm').addEventListener('submit', async event => {
-      event.preventDefault();
-      const rug = findRug($('#adjustSku').value);
-      if (!rug) {
-        showNotice('SKU not found.', true);
-        return;
-      }
-
-      const form = new FormData(event.currentTarget);
-      const quantity = Number(form.get('quantity'));
-      const direction = form.get('direction');
-      const quantityChange = direction === 'remove' ? -quantity : quantity;
-      const response = await api('adjustQuantity', {
-        sku: rug.SKU,
-        quantityChange,
-        notes: form.get('notes')
-      });
-
-      if (response.success) {
-        event.currentTarget.reset();
-        event.currentTarget.quantity.value = 1;
-        await loadAll();
-        renderLookup();
       }
       showNotice(response.message, !response.success);
     });
@@ -797,7 +914,10 @@
       }
 
       state.inventory = inventoryResponse.inventory || [];
+      syncDashboardFilters();
       renderDashboard();
+      renderScanOptions();
+      renderLabelPicker();
       renderBarcodes();
 
       const transactionResponse = await api('getTransactions');
@@ -860,6 +980,8 @@
       state.currentTab = tabName;
       $$('.tab').forEach(button => button.classList.toggle('active', button.dataset.tab === tabName));
       $$('.panel').forEach(panel => panel.classList.toggle('active', panel.id === tabName));
+      if (tabName !== 'adjust') stopScanner();
+      if (tabName === 'adjust') renderScanOptions();
       if (tabName === 'barcodes') renderBarcodes();
       if (tabName === 'transactions') renderTransactions();
     }
@@ -869,8 +991,10 @@
       const totalRugs = state.inventory.reduce((sum, rug) => sum + Number(rug.Quantity || 0), 0);
       $('#totalRugs').textContent = totalRugs;
       $('#uniqueSkus').textContent = state.inventory.length;
+      $('#designCount').textContent = new Set(state.inventory.map(rug => rug.Name).filter(Boolean)).size;
       $('#sizeCount').textContent = new Set(state.inventory.map(rug => rug.Size).filter(Boolean)).size;
       $('#colorCount').textContent = new Set(state.inventory.map(rug => rug.Color).filter(Boolean)).size;
+      $('#visibleCount').value = `${rows.length} of ${state.inventory.length}`;
 
       $('#inventoryBody').innerHTML = rows.map(rug => `
         <tr>
@@ -889,6 +1013,19 @@
       `).join('') || '<tr><td colspan="6">No rugs found.</td></tr>';
     }
 
+    function syncDashboardFilters() {
+      populateSelect($('#designFilter'), 'All designs', uniqueValues(state.inventory.map(rug => rug.Name)));
+      populateSelect($('#sizeFilter'), 'All sizes', uniqueValues(state.inventory.map(rug => rug.Size)));
+      populateSelect($('#colorFilter'), 'All colors', uniqueValues(state.inventory.map(rug => rug.Color)));
+    }
+
+    function populateSelect(select, allLabel, values) {
+      const previous = select.value;
+      select.innerHTML = `<option value="">${escapeHtml(allLabel)}</option>` +
+        values.map(value => `<option value="${escapeAttr(value)}">${escapeHtml(value)}</option>`).join('');
+      select.value = values.includes(previous) ? previous : '';
+    }
+
     function handleInventoryAction(event) {
       const button = event.target.closest('button[data-action]');
       if (!button) return;
@@ -901,34 +1038,24 @@
       if (action === 'delete') deleteSku(sku);
     }
 
-    function renderLookup() {
-      const rug = findRug($('#adjustSku').value);
-      const box = $('#lookupResult');
-      if (!rug) {
-        box.hidden = !$('#adjustSku').value.trim();
-        box.innerHTML = '<strong>SKU not found</strong><span>Check the scan or enter a different SKU.</span>';
+    function renderBarcodes() {
+      const labels = selectedLabelItems();
+      if (!labels.length) {
+        $('#labels').innerHTML = '<div class="rug-card"><strong>No labels selected</strong><span>Select SKUs above, then print.</span></div>';
         return;
       }
 
-      box.hidden = false;
-      box.innerHTML = `
-        <strong>${escapeHtml(rug.SKU)} - ${escapeHtml(rug.Name)}</strong>
-        <span>Size: ${escapeHtml(rug.Size)} | Color: ${escapeHtml(rug.Color)} | Quantity: ${Number(rug.Quantity || 0)}</span>
-      `;
-    }
-
-    function renderBarcodes() {
-      $('#labels').innerHTML = state.inventory.map((rug, index) => `
+      $('#labels').innerHTML = labels.map((item, index) => `
         <div class="label">
-          <strong>${escapeHtml(rug.SKU)}</strong>
+          <strong>${escapeHtml(item.rug.SKU)}</strong>
           <svg id="barcode-${index}"></svg>
-          <span>${escapeHtml(rug.Name)}</span>
-          <span>${escapeHtml(rug.Size)} | ${escapeHtml(rug.Color)}</span>
+          <span>${escapeHtml(item.rug.Name)}</span>
+          <span>${escapeHtml(item.rug.Size)} | ${escapeHtml(item.rug.Color)}</span>
         </div>
       `).join('');
 
-      state.inventory.forEach((rug, index) => {
-        JsBarcode(`#barcode-${index}`, rug.BarcodeValue || rug.SKU, {
+      labels.forEach((item, index) => {
+        JsBarcode(`#barcode-${index}`, item.rug.BarcodeValue || item.rug.SKU, {
           format: 'CODE128',
           width: 1.6,
           height: 44,
@@ -954,10 +1081,240 @@
 
     function filteredInventory() {
       const query = $('#searchInput').value.trim().toLowerCase();
-      if (!query) return state.inventory;
+      const design = $('#designFilter').value;
+      const size = $('#sizeFilter').value;
+      const color = $('#colorFilter').value;
       return state.inventory.filter(rug =>
-        [rug.SKU, rug.Name, rug.Size, rug.Color].some(value => String(value || '').toLowerCase().includes(query))
+        (!query || [rug.SKU, rug.Name, rug.Size, rug.Color].some(value => String(value || '').toLowerCase().includes(query))) &&
+        (!design || rug.Name === design) &&
+        (!size || rug.Size === size) &&
+        (!color || rug.Color === color)
       );
+    }
+
+    function renderScanOptions() {
+      const previousSku = $('#scanSkuSelect').value;
+      const query = $('#scanSearch').value.trim().toLowerCase();
+      const matches = state.inventory.filter(rug =>
+        !query || [rug.SKU, rug.Name, rug.Size, rug.Color].some(value => String(value || '').toLowerCase().includes(query))
+      );
+
+      $('#scanSkuSelect').innerHTML = matches.map(rug => `
+        <option value="${escapeAttr(rug.SKU)}">${escapeHtml(rug.SKU)} - ${escapeHtml(rug.Name)} - ${escapeHtml(rug.Size)} - ${escapeHtml(rug.Color)}</option>
+      `).join('');
+
+      const selectedStillVisible = matches.some(rug => rug.SKU === previousSku);
+      if (selectedStillVisible) $('#scanSkuSelect').value = previousSku;
+      renderScanTarget();
+    }
+
+    function renderScanTarget() {
+      const rug = getSelectedScanRug();
+      const card = $('#scanTargetCard');
+      $('#pendingCount').textContent = state.pendingScanCount;
+
+      if (!rug) {
+        card.innerHTML = '<strong>No SKU selected</strong><span>Search for a design, size, color, or SKU before counting.</span>';
+        return;
+      }
+
+      const direction = $('#scanDirection').value === 'remove' ? 'Remove' : 'Receive';
+      card.innerHTML = `
+        <strong>${escapeHtml(direction)}: ${escapeHtml(rug.SKU)} - ${escapeHtml(rug.Name)}</strong>
+        <span>Size: ${escapeHtml(rug.Size)} | Color: ${escapeHtml(rug.Color)} | Current quantity: ${Number(rug.Quantity || 0)}</span>
+      `;
+    }
+
+    async function startScanner() {
+      const rug = getSelectedScanRug();
+      if (!rug) {
+        showScanNotice('Choose a target SKU before starting the scanner.', true);
+        return;
+      }
+
+      if (!window.ZXingBrowser || !ZXingBrowser.BrowserMultiFormatReader) {
+        showScanNotice('Camera scanner library did not load. You can still use Count one after verifying the SKU.', true);
+        return;
+      }
+
+      stopScanner();
+      try {
+        state.scannerReader = new ZXingBrowser.BrowserMultiFormatReader();
+        state.scannerControls = await state.scannerReader.decodeFromVideoDevice(null, $('#scannerVideo'), result => {
+          if (!result) return;
+          const code = typeof result.getText === 'function' ? result.getText() : String(result.text || result);
+          handleScannedCode(code);
+        });
+        $('#startScannerBtn').disabled = true;
+        $('#stopScannerBtn').disabled = false;
+        showScanNotice('Scanner running. Point the camera at the selected SKU label.');
+      } catch (error) {
+        showScanNotice(error.message || String(error), true);
+      }
+    }
+
+    function stopScanner() {
+      if (state.scannerControls && typeof state.scannerControls.stop === 'function') {
+        state.scannerControls.stop();
+      }
+      state.scannerControls = null;
+      $('#startScannerBtn').disabled = false;
+      $('#stopScannerBtn').disabled = true;
+    }
+
+    function handleScannedCode(code) {
+      const cleanCode = String(code || '').trim().toUpperCase();
+      const now = Date.now();
+      if (!cleanCode) return;
+      if (cleanCode === state.lastScannedCode && now - state.lastScanAt < 1400) return;
+
+      state.lastScannedCode = cleanCode;
+      state.lastScanAt = now;
+      incrementPendingCount(cleanCode, `Scanned ${cleanCode}.`);
+    }
+
+    function incrementPendingCount(scannedSku, successMessage) {
+      const targetSku = getSelectedScanSku();
+      if (!targetSku) {
+        showScanNotice('Choose a target SKU before counting.', true);
+        return;
+      }
+
+      const cleanScannedSku = String(scannedSku || '').trim().toUpperCase();
+      if (cleanScannedSku !== targetSku) {
+        showScanNotice(`Scanned ${cleanScannedSku}, but target is ${targetSku}. Count was not changed.`, true);
+        return;
+      }
+
+      state.pendingScanCount += 1;
+      renderScanTarget();
+      showScanNotice(successMessage || 'Count added.');
+    }
+
+    function undoPendingCount() {
+      state.pendingScanCount = Math.max(0, state.pendingScanCount - 1);
+      renderScanTarget();
+      showScanNotice('Last count removed.');
+    }
+
+    function resetPendingCount() {
+      state.pendingScanCount = 0;
+      renderScanTarget();
+      showScanNotice('Pending count reset.');
+    }
+
+    async function submitScannedCount(event) {
+      event.preventDefault();
+      const rug = getSelectedScanRug();
+      if (!rug) {
+        showScanNotice('Choose a target SKU before submitting.', true);
+        return;
+      }
+      if (state.pendingScanCount <= 0) {
+        showScanNotice('Scan or count at least one rug before submitting.', true);
+        return;
+      }
+
+      const direction = $('#scanDirection').value;
+      const quantityChange = direction === 'remove' ? -state.pendingScanCount : state.pendingScanCount;
+      const form = new FormData(event.currentTarget);
+      const notes = form.get('notes') || `${direction === 'remove' ? 'Removed' : 'Received'} by barcode scan batch`;
+      const response = await api('adjustQuantity', {
+        sku: rug.SKU,
+        quantityChange,
+        notes
+      });
+
+      if (response.success) {
+        state.pendingScanCount = 0;
+        event.currentTarget.reset();
+        await loadAll();
+      }
+      showScanNotice(response.message, !response.success);
+      showNotice(response.message, !response.success);
+    }
+
+    function getSelectedScanSku() {
+      return String($('#scanSkuSelect').value || '').trim().toUpperCase();
+    }
+
+    function getSelectedScanRug() {
+      return findRug(getSelectedScanSku());
+    }
+
+    function showScanNotice(message, isError = false) {
+      const notice = $('#scanNotice');
+      notice.textContent = message || '';
+      notice.className = `notice ${isError ? 'error' : message ? 'success' : ''}`;
+    }
+
+    function renderLabelPicker() {
+      const query = $('#labelSearch').value.trim().toLowerCase();
+      const rows = state.inventory.filter(rug =>
+        !query || [rug.SKU, rug.Name, rug.Size, rug.Color].some(value => String(value || '').toLowerCase().includes(query))
+      );
+
+      $('#labelPickerBody').innerHTML = rows.map(rug => {
+        const count = Number(state.labelSelection[rug.SKU] || 0);
+        return `
+          <tr>
+            <td><input type="checkbox" data-label-check="${escapeAttr(rug.SKU)}" ${count > 0 ? 'checked' : ''}></td>
+            <td>${escapeHtml(rug.SKU)}</td>
+            <td>${escapeHtml(rug.Name)}</td>
+            <td>${escapeHtml(rug.Size)}</td>
+            <td>${escapeHtml(rug.Color)}</td>
+            <td><input type="number" min="1" step="1" value="${count || Number($('#defaultLabelCount').value || 1)}" data-label-count="${escapeAttr(rug.SKU)}"></td>
+          </tr>
+        `;
+      }).join('') || '<tr><td colspan="6">No labels match.</td></tr>';
+      renderBarcodes();
+    }
+
+    function handleLabelPickerChange(event) {
+      const checkSku = event.target.dataset.labelCheck;
+      const countSku = event.target.dataset.labelCount;
+      if (checkSku) {
+        const countInput = $(`[data-label-count="${cssEscape(checkSku)}"]`);
+        state.labelSelection[checkSku] = event.target.checked ? cleanPositiveInteger(countInput ? countInput.value : 1) : 0;
+      }
+      if (countSku) {
+        const checkInput = $(`[data-label-check="${cssEscape(countSku)}"]`);
+        if (checkInput && checkInput.checked) state.labelSelection[countSku] = cleanPositiveInteger(event.target.value);
+      }
+      renderBarcodes();
+    }
+
+    function selectVisibleLabels() {
+      const defaultCount = cleanPositiveInteger($('#defaultLabelCount').value);
+      $$('[data-label-check]').forEach(input => {
+        input.checked = true;
+        state.labelSelection[input.dataset.labelCheck] = defaultCount;
+        const countInput = $(`[data-label-count="${cssEscape(input.dataset.labelCheck)}"]`);
+        if (countInput) countInput.value = defaultCount;
+      });
+      renderBarcodes();
+    }
+
+    function clearLabelSelection() {
+      state.labelSelection = {};
+      renderLabelPicker();
+    }
+
+    function selectedLabelItems() {
+      const items = [];
+      state.inventory.forEach(rug => {
+        const count = Math.max(0, Math.floor(Number(state.labelSelection[rug.SKU] || 0)));
+        for (let i = 0; i < count; i++) items.push({ rug });
+      });
+      return items;
+    }
+
+    function cleanPositiveInteger(value) {
+      return Math.max(1, Math.floor(Number(value) || 1));
+    }
+
+    function uniqueValues(values) {
+      return Array.from(new Set(values.map(value => String(value || '').trim()).filter(Boolean))).sort((a, b) => a.localeCompare(b));
     }
 
     function openEditModal(sku) {
@@ -1026,7 +1383,7 @@
         headers.forEach((header, index) => record[header] = cells[index] || '');
         return {
           sku: record.sku,
-          name: record.name,
+          name: record.design || record.name,
           size: record.size,
           color: record.color,
           quantity: Number(record.quantity || 0)
@@ -1065,7 +1422,7 @@
     }
 
     function exportCsv() {
-      const headers = ['sku', 'name', 'size', 'color', 'quantity'];
+      const headers = ['sku', 'design', 'size', 'color', 'quantity'];
       const rows = state.inventory.map(rug => [rug.SKU, rug.Name, rug.Size, rug.Color, rug.Quantity]);
       const csv = [headers, ...rows].map(row => row.map(csvCell).join(',')).join('\n');
       const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
@@ -1112,6 +1469,11 @@
       if (!value) return '';
       const date = new Date(value);
       return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleString();
+    }
+
+    function cssEscape(value) {
+      if (window.CSS && typeof CSS.escape === 'function') return CSS.escape(value);
+      return String(value).replace(/["\\]/g, '\\$&');
     }
   </script>
 </body>

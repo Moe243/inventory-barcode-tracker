@@ -345,7 +345,7 @@ function rowToObject_(headers, row) {
 function normalizeRug_(rug) {
   return {
     SKU: String(rug.SKU || rug.sku || '').trim().toUpperCase(),
-    Name: String(rug.Name || rug.name || rug.description || '').trim(),
+    Name: String(rug.Name || rug.name || rug.design || rug.description || '').trim(),
     Size: String(rug.Size || rug.size || '').trim(),
     Color: String(rug.Color || rug.color || '').trim(),
     Quantity: Number(rug.Quantity ?? rug.quantity ?? 0)
