@@ -14,9 +14,8 @@ This project uses Google Sheets as the inventory database and Google Apps Script
 3. Replace the default Apps Script code with the contents of `Code.gs`.
 4. Create a new HTML file named `Index.html`.
 5. Paste the contents of `Index.html` into that file.
-6. In both files, change the temporary password value `change-me-lotus` to your own password:
-   - `CONFIG.PASSWORD` in `Code.gs`
-   - `FRONTEND_PASSWORD` in `Index.html`
+6. In `Code.gs`, change the temporary password value `change-me-lotus` to your own password:
+   - `CONFIG.PASSWORD`
 7. In Apps Script, select `setupSheet` from the function dropdown and click `Run`.
 8. Approve the Google permissions.
 9. Deploy the app:
@@ -71,7 +70,7 @@ The easiest deployment is:
 - `Execute as: Me`
 - `Who has access: Anyone with the link`
 
-That means anyone who has the deployed web app link and password can access the app. The included password screen is basic protection only, not enterprise security. For stronger security, deploy access only to specific Google accounts in your organization.
+That means anyone who has the deployed web app link and password can access the app. The included password screen checks the password on the Apps Script backend, but it is still basic protection only, not enterprise security. For stronger security, deploy access only to specific Google accounts in your organization.
 
 ## Practical Notes
 

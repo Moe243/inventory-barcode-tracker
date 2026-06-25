@@ -656,7 +656,6 @@
   </div>
 
   <script>
-    const FRONTEND_PASSWORD = 'change-me-lotus';
     const state = {
       password: '',
       inventory: [],
@@ -671,11 +670,16 @@
     $('#loginForm').addEventListener('submit', async event => {
       event.preventDefault();
       const password = $('#passwordInput').value;
-      if (password !== FRONTEND_PASSWORD) {
-        showAuthNotice('Wrong password.', true);
+      state.password = password;
+
+      const response = await api('validatePassword');
+      if (!response.success) {
+        state.password = '';
+        showAuthNotice(response.message || 'Wrong password.', true);
         return;
       }
-      state.password = password;
+
+      showAuthNotice('');
       $('#auth').hidden = true;
       $('#app').hidden = false;
       await loadAll();
@@ -806,16 +810,50 @@
     }
 
     async function api(action, payload = {}) {
-      try {
-        const response = await fetch(location.href, {
-          method: 'POST',
-          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-          body: JSON.stringify({ action, password: state.password, ...payload })
+      return new Promise(resolve => {
+        if (!window.google || !google.script || !google.script.run) {
+          resolve({
+            success: false,
+            message: 'This app must be opened from the deployed Google Apps Script web app URL.'
+          });
+          return;
+        }
+
+        const runner = google.script.run
+          .withSuccessHandler(response => resolve(response))
+          .withFailureHandler(error => {
+            resolve({ success: false, message: error.message || String(error) });
+          });
+
+        switch (action) {
+          case 'validatePassword':
+            runner.validatePassword(state.password);
+            break;
+          case 'getInventory':
+            runner.apiGetInventory(state.password);
+            break;
+          case 'getTransactions':
+            runner.apiGetTransactions(state.password);
+            break;
+          case 'addOrUpdateRug':
+            runner.apiAddOrUpdateRug(state.password, payload.rug || {});
+            break;
+          case 'updateRug':
+            runner.apiUpdateRug(state.password, payload.rug || {});
+            break;
+          case 'adjustQuantity':
+            runner.apiAdjustQuantity(state.password, payload.sku, Number(payload.quantityChange), payload.notes || '');
+            break;
+          case 'deleteRug':
+            runner.apiDeleteRug(state.password, payload.sku);
+            break;
+          case 'importInventory':
+            runner.apiImportInventory(state.password, payload.rows || []);
+            break;
+          default:
+            resolve({ success: false, message: 'Unknown action.' });
+        }
         });
-        return await response.json();
-      } catch (error) {
-        return { success: false, message: error.message || String(error) };
-      }
     }
 
     function switchTab(tabName) {

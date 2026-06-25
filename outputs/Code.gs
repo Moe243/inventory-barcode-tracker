@@ -23,33 +23,44 @@ function doGet() {
 function doPost(e) {
   try {
     const body = e && e.postData && e.postData.contents ? JSON.parse(e.postData.contents) : {};
-    const action = body.action;
-
-    if (!isPasswordValid_(body.password)) {
-      return jsonResponse_({ success: false, message: 'Invalid password.' });
-    }
-
-    switch (action) {
-      case 'getInventory':
-        return jsonResponse_(getInventory());
-      case 'addOrUpdateRug':
-        return jsonResponse_(addOrUpdateRug(body.rug || {}));
-      case 'updateRug':
-        return jsonResponse_(updateRug(body.rug || {}));
-      case 'adjustQuantity':
-        return jsonResponse_(adjustQuantity(body.sku, Number(body.quantityChange), body.notes || ''));
-      case 'deleteRug':
-        return jsonResponse_(deleteRug(body.sku));
-      case 'importInventory':
-        return jsonResponse_(importInventory(body.rows || []));
-      case 'getTransactions':
-        return jsonResponse_(getTransactions());
-      default:
-        return jsonResponse_({ success: false, message: 'Unknown action.' });
-    }
+    return jsonResponse_(handleApiAction_(body.action, body.password, body));
   } catch (error) {
     return jsonResponse_({ success: false, message: error.message || String(error) });
   }
+}
+
+function validatePassword(password) {
+  return isPasswordValid_(password)
+    ? { success: true, message: 'Password accepted.' }
+    : { success: false, message: 'Wrong password.' };
+}
+
+function apiGetInventory(password) {
+  return handleApiAction_('getInventory', password, {});
+}
+
+function apiAddOrUpdateRug(password, rug) {
+  return handleApiAction_('addOrUpdateRug', password, { rug });
+}
+
+function apiUpdateRug(password, rug) {
+  return handleApiAction_('updateRug', password, { rug });
+}
+
+function apiAdjustQuantity(password, sku, quantityChange, notes) {
+  return handleApiAction_('adjustQuantity', password, { sku, quantityChange, notes });
+}
+
+function apiDeleteRug(password, sku) {
+  return handleApiAction_('deleteRug', password, { sku });
+}
+
+function apiImportInventory(password, rows) {
+  return handleApiAction_('importInventory', password, { rows });
+}
+
+function apiGetTransactions(password) {
+  return handleApiAction_('getTransactions', password, {});
 }
 
 function getInventory() {
@@ -387,6 +398,35 @@ function withLock_(callback) {
 
 function isPasswordValid_(password) {
   return String(password || '') === CONFIG.PASSWORD;
+}
+
+function handleApiAction_(action, password, body) {
+  if (!isPasswordValid_(password)) {
+    return { success: false, message: 'Invalid password.' };
+  }
+
+  try {
+    switch (action) {
+      case 'getInventory':
+        return getInventory();
+      case 'addOrUpdateRug':
+        return addOrUpdateRug(body.rug || {});
+      case 'updateRug':
+        return updateRug(body.rug || {});
+      case 'adjustQuantity':
+        return adjustQuantity(body.sku, Number(body.quantityChange), body.notes || '');
+      case 'deleteRug':
+        return deleteRug(body.sku);
+      case 'importInventory':
+        return importInventory(body.rows || []);
+      case 'getTransactions':
+        return getTransactions();
+      default:
+        return { success: false, message: 'Unknown action.' };
+    }
+  } catch (error) {
+    return { success: false, message: error.message || String(error) };
+  }
 }
 
 function jsonResponse_(payload) {
