@@ -660,6 +660,11 @@
               <button id="startScannerBtn" type="button">Start camera scanner</button>
               <button id="stopScannerBtn" class="secondary" type="button" disabled>Stop scanner</button>
             </div>
+            <form id="manualScanForm" class="form-grid">
+              <label class="full">Type or hardware-scan barcode
+                <input id="manualScanInput" name="manualScanInput" placeholder="Scan or type SKU, then press Enter">
+              </label>
+            </form>
             <div id="scanNotice" class="notice"></div>
             <div class="scanner-frame">
               <video id="scannerVideo" muted playsinline></video>
@@ -854,6 +859,7 @@
     $('#resetCountBtn').addEventListener('click', resetPendingCount);
     $('#startScannerBtn').addEventListener('click', startScanner);
     $('#stopScannerBtn').addEventListener('click', stopScanner);
+    $('#manualScanForm').addEventListener('submit', handleManualScan);
     $('#scanSubmitForm').addEventListener('submit', submitScannedCount);
     $('#labelSearch').addEventListener('input', renderLabelPicker);
     $('#defaultLabelCount').addEventListener('change', renderLabelPicker);
@@ -1196,7 +1202,12 @@
       }
 
       if (!window.ZXingBrowser || !ZXingBrowser.BrowserMultiFormatReader) {
-        showScanNotice('Camera scanner library did not load. You can still use Count one after verifying the SKU.', true);
+        showScanNotice('Camera scanner library did not load. You can still use Count one or type/scan the barcode into the barcode box.', true);
+        return;
+      }
+
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        showScanNotice('This browser is blocking camera access. Open the deployed Apps Script link directly in Safari or Chrome, then use Count one or the barcode box if camera is still unavailable.', true);
         return;
       }
 
@@ -1212,7 +1223,7 @@
         $('#stopScannerBtn').disabled = false;
         showScanNotice('Scanner running. Point the camera at the selected SKU label.');
       } catch (error) {
-        showScanNotice(error.message || String(error), true);
+        showScanNotice(cameraErrorMessage(error), true);
       }
     }
 
@@ -1234,6 +1245,30 @@
       state.lastScannedCode = cleanCode;
       state.lastScanAt = now;
       incrementPendingCount(cleanCode, `Scanned ${cleanCode}.`);
+    }
+
+    function handleManualScan(event) {
+      event.preventDefault();
+      const input = $('#manualScanInput');
+      const code = input.value;
+      input.value = '';
+      handleScannedCode(code);
+      input.focus();
+    }
+
+    function cameraErrorMessage(error) {
+      const name = error && error.name ? error.name : '';
+      const message = error && error.message ? error.message : String(error || '');
+      if (name === 'NotAllowedError' || /denied|not allowed|permission/i.test(message)) {
+        return 'Camera permission is blocked. Open the deployed Apps Script URL directly in your phone browser, allow camera permission for the site, and avoid opening it inside another app or iframe. You can still type/scan the SKU into the barcode box.';
+      }
+      if (name === 'NotFoundError' || /not found|no camera/i.test(message)) {
+        return 'No camera was found by this browser. You can still type/scan the SKU into the barcode box.';
+      }
+      if (name === 'NotReadableError' || /in use|could not start/i.test(message)) {
+        return 'The camera is already in use by another app or browser tab. Close other camera apps, then try again.';
+      }
+      return message || 'Camera could not start. You can still type/scan the SKU into the barcode box.';
     }
 
     function incrementPendingCount(scannedSku, successMessage) {
