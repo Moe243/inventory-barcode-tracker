@@ -1,0 +1,1080 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Lotus Rugs Inventory</title>
+  <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"></script>
+  <style>
+    :root {
+      --ink: #18212f;
+      --muted: #65758a;
+      --line: #d9e0ea;
+      --surface: #ffffff;
+      --band: #f4f7fb;
+      --brand: #176b5b;
+      --brand-dark: #0e4d42;
+      --warn: #9a3412;
+      --danger: #b42318;
+      --focus: #2f80ed;
+      --shadow: 0 8px 24px rgba(15, 23, 42, 0.08);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      background: var(--band);
+      color: var(--ink);
+      font-family: Arial, Helvetica, sans-serif;
+      font-size: 15px;
+    }
+
+    button,
+    input,
+    select,
+    textarea {
+      font: inherit;
+    }
+
+    button {
+      border: 0;
+      border-radius: 6px;
+      background: var(--brand);
+      color: #fff;
+      min-height: 38px;
+      padding: 0 14px;
+      cursor: pointer;
+      font-weight: 700;
+    }
+
+    button:hover {
+      background: var(--brand-dark);
+    }
+
+    button.secondary {
+      background: #e8eef6;
+      color: var(--ink);
+    }
+
+    button.secondary:hover {
+      background: #dbe5f0;
+    }
+
+    button.danger {
+      background: var(--danger);
+    }
+
+    button.warn {
+      background: var(--warn);
+    }
+
+    input,
+    select,
+    textarea {
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: #fff;
+      color: var(--ink);
+      min-height: 40px;
+      padding: 8px 10px;
+    }
+
+    input:focus,
+    textarea:focus {
+      outline: 2px solid rgba(47, 128, 237, 0.28);
+      border-color: var(--focus);
+    }
+
+    label {
+      display: grid;
+      gap: 6px;
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    .app {
+      min-height: 100vh;
+    }
+
+    .topbar {
+      background: #101820;
+      color: #fff;
+      padding: 18px clamp(16px, 4vw, 36px);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+    }
+
+    .brand h1 {
+      margin: 0;
+      font-size: 22px;
+      letter-spacing: 0;
+    }
+
+    .brand p {
+      margin: 4px 0 0;
+      color: #c7d0db;
+      font-size: 13px;
+    }
+
+    .shell {
+      width: min(1280px, 100%);
+      margin: 0 auto;
+      padding: 18px clamp(12px, 3vw, 28px) 40px;
+    }
+
+    .auth {
+      width: min(420px, calc(100% - 32px));
+      margin: 12vh auto 0;
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      box-shadow: var(--shadow);
+      padding: 24px;
+    }
+
+    .auth h1 {
+      margin: 0 0 6px;
+      font-size: 24px;
+    }
+
+    .auth p {
+      margin: 0 0 20px;
+      color: var(--muted);
+    }
+
+    .tabs {
+      display: flex;
+      gap: 6px;
+      overflow-x: auto;
+      padding: 6px;
+      background: #e8eef6;
+      border-radius: 8px;
+      margin-bottom: 16px;
+    }
+
+    .tab {
+      flex: 0 0 auto;
+      background: transparent;
+      color: var(--ink);
+      white-space: nowrap;
+    }
+
+    .tab.active {
+      background: var(--surface);
+      box-shadow: 0 1px 3px rgba(15, 23, 42, 0.1);
+    }
+
+    .panel {
+      display: none;
+    }
+
+    .panel.active {
+      display: block;
+    }
+
+    .metrics {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+      margin-bottom: 14px;
+    }
+
+    .metric,
+    .section {
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+    }
+
+    .metric {
+      padding: 16px;
+    }
+
+    .metric span {
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    .metric strong {
+      display: block;
+      margin-top: 8px;
+      font-size: 28px;
+    }
+
+    .section {
+      padding: 16px;
+      margin-bottom: 16px;
+    }
+
+    .section h2 {
+      margin: 0 0 14px;
+      font-size: 18px;
+    }
+
+    .toolbar,
+    .form-grid,
+    .adjust-grid {
+      display: grid;
+      gap: 12px;
+      align-items: end;
+    }
+
+    .toolbar {
+      grid-template-columns: minmax(220px, 1fr) auto auto;
+      margin-bottom: 12px;
+    }
+
+    .form-grid {
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+    }
+
+    .adjust-grid {
+      grid-template-columns: 1fr 160px 160px;
+    }
+
+    .full {
+      grid-column: 1 / -1;
+    }
+
+    .table-wrap {
+      width: 100%;
+      overflow-x: auto;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      min-width: 760px;
+    }
+
+    th,
+    td {
+      border-bottom: 1px solid var(--line);
+      padding: 10px;
+      text-align: left;
+      vertical-align: middle;
+    }
+
+    th {
+      background: #f8fafc;
+      color: var(--muted);
+      font-size: 12px;
+      text-transform: uppercase;
+    }
+
+    td.actions {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+
+    td.actions button {
+      min-height: 32px;
+      padding: 0 10px;
+      font-size: 13px;
+    }
+
+    .notice {
+      min-height: 24px;
+      margin: 10px 0;
+      color: var(--muted);
+      font-weight: 700;
+    }
+
+    .notice.error {
+      color: var(--danger);
+    }
+
+    .notice.success {
+      color: var(--brand);
+    }
+
+    .rug-card {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #f8fafc;
+      padding: 14px;
+      margin: 12px 0;
+      display: grid;
+      gap: 4px;
+    }
+
+    .barcode-actions {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: center;
+      margin-bottom: 12px;
+    }
+
+    .labels {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+      gap: 12px;
+    }
+
+    .label {
+      background: #fff;
+      border: 1px solid #111827;
+      border-radius: 4px;
+      padding: 10px;
+      text-align: center;
+      min-height: 150px;
+      display: grid;
+      align-content: center;
+      gap: 4px;
+      break-inside: avoid;
+    }
+
+    .label strong {
+      font-size: 14px;
+    }
+
+    .label span {
+      font-size: 12px;
+      color: #374151;
+    }
+
+    .modal {
+      position: fixed;
+      inset: 0;
+      background: rgba(15, 23, 42, 0.58);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+      z-index: 10;
+    }
+
+    .modal.open {
+      display: flex;
+    }
+
+    .modal-box {
+      width: min(560px, 100%);
+      background: #fff;
+      border-radius: 8px;
+      padding: 18px;
+      box-shadow: var(--shadow);
+    }
+
+    .modal-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+      margin-top: 14px;
+    }
+
+    @media (max-width: 850px) {
+      .metrics,
+      .form-grid,
+      .adjust-grid,
+      .toolbar {
+        grid-template-columns: 1fr;
+      }
+
+      .topbar {
+        align-items: flex-start;
+        flex-direction: column;
+      }
+    }
+
+    @media print {
+      body {
+        background: #fff;
+      }
+
+      .topbar,
+      .tabs,
+      .barcode-actions,
+      .section:not(.print-section),
+      .notice {
+        display: none !important;
+      }
+
+      .shell {
+        padding: 0;
+        width: 100%;
+      }
+
+      .panel {
+        display: none !important;
+      }
+
+      #barcodes {
+        display: block !important;
+      }
+
+      .print-section {
+        border: 0;
+        box-shadow: none;
+        padding: 0;
+      }
+
+      .labels {
+        grid-template-columns: repeat(2, 3.4in);
+        gap: 0.12in;
+      }
+
+      .label {
+        width: 3.4in;
+        height: 1.8in;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div id="auth" class="auth">
+    <h1>Lotus Rugs</h1>
+    <p>Warehouse inventory access</p>
+    <form id="loginForm">
+      <label>Password
+        <input id="passwordInput" type="password" autocomplete="current-password" required>
+      </label>
+      <div id="authNotice" class="notice"></div>
+      <button type="submit">Open inventory</button>
+    </form>
+  </div>
+
+  <div id="app" class="app" hidden>
+    <header class="topbar">
+      <div class="brand">
+        <h1>Lotus Rugs Inventory</h1>
+        <p>Google Sheets warehouse dashboard</p>
+      </div>
+      <button id="refreshBtn" class="secondary" type="button">Refresh</button>
+    </header>
+
+    <main class="shell">
+      <nav class="tabs" aria-label="Inventory sections">
+        <button class="tab active" data-tab="dashboard" type="button">Dashboard</button>
+        <button class="tab" data-tab="add" type="button">Add Rug</button>
+        <button class="tab" data-tab="adjust" type="button">Receive / Remove</button>
+        <button class="tab" data-tab="import" type="button">Import CSV</button>
+        <button class="tab" data-tab="barcodes" type="button">Barcodes</button>
+        <button class="tab" data-tab="transactions" type="button">Transactions</button>
+      </nav>
+
+      <div id="notice" class="notice"></div>
+
+      <section id="dashboard" class="panel active">
+        <div class="metrics">
+          <div class="metric"><span>Total Rugs</span><strong id="totalRugs">0</strong></div>
+          <div class="metric"><span>Unique SKUs</span><strong id="uniqueSkus">0</strong></div>
+          <div class="metric"><span>Sizes</span><strong id="sizeCount">0</strong></div>
+          <div class="metric"><span>Colors</span><strong id="colorCount">0</strong></div>
+        </div>
+
+        <div class="section">
+          <div class="toolbar">
+            <label>Search inventory
+              <input id="searchInput" type="search" placeholder="SKU, name, size, or color">
+            </label>
+            <button id="exportBtn" class="secondary" type="button">Export CSV</button>
+            <button id="newRugBtn" type="button">New rug</button>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>SKU</th>
+                  <th>Name</th>
+                  <th>Size</th>
+                  <th>Color</th>
+                  <th>Quantity</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="inventoryBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <section id="add" class="panel">
+        <div class="section">
+          <h2>Add Rug</h2>
+          <form id="addForm" class="form-grid">
+            <label>SKU
+              <input name="sku" placeholder="Leave blank for auto SKU">
+            </label>
+            <label>Name / Description
+              <input name="name" required>
+            </label>
+            <label>Size
+              <input name="size" placeholder="8x10" required>
+            </label>
+            <label>Color
+              <input name="color" required>
+            </label>
+            <label>Quantity
+              <input name="quantity" type="number" min="0" step="1" value="1" required>
+            </label>
+            <label class="full">Existing SKU behavior
+              <select name="mode">
+                <option value="add">Add entered quantity to existing quantity</option>
+                <option value="replace">Replace existing quantity with entered quantity</option>
+              </select>
+            </label>
+            <div class="full">
+              <button type="submit">Save rug</button>
+            </div>
+          </form>
+        </div>
+      </section>
+
+      <section id="adjust" class="panel">
+        <div class="section">
+          <h2>Receive / Remove</h2>
+          <div class="adjust-grid">
+            <label>SKU
+              <input id="adjustSku" placeholder="Enter or scan SKU">
+            </label>
+            <button id="lookupBtn" class="secondary" type="button">Lookup</button>
+            <button id="clearAdjustBtn" class="secondary" type="button">Clear</button>
+          </div>
+          <div id="lookupResult" class="rug-card" hidden></div>
+          <form id="adjustForm" class="form-grid">
+            <label>Quantity
+              <input name="quantity" type="number" min="1" step="1" value="1" required>
+            </label>
+            <label>Action
+              <select name="direction">
+                <option value="receive">Add quantity</option>
+                <option value="remove">Remove quantity</option>
+              </select>
+            </label>
+            <label class="full">Notes
+              <textarea name="notes" rows="3" placeholder="Receiving, customer hold, damage, sold, etc."></textarea>
+            </label>
+            <div class="full">
+              <button type="submit">Submit adjustment</button>
+            </div>
+          </form>
+        </div>
+      </section>
+
+      <section id="import" class="panel">
+        <div class="section">
+          <h2>Import CSV</h2>
+          <label>CSV file with headers: sku,name,size,color,quantity
+            <input id="csvFile" type="file" accept=".csv,text/csv">
+          </label>
+          <div class="toolbar">
+            <button id="importBtn" type="button" disabled>Import preview rows</button>
+            <button id="clearImportBtn" class="secondary" type="button">Clear preview</button>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>SKU</th>
+                  <th>Name</th>
+                  <th>Size</th>
+                  <th>Color</th>
+                  <th>Quantity</th>
+                </tr>
+              </thead>
+              <tbody id="csvPreviewBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <section id="barcodes" class="panel">
+        <div class="section print-section">
+          <div class="barcode-actions">
+            <h2>Barcode Labels</h2>
+            <button id="printBtn" type="button">Print labels</button>
+          </div>
+          <div id="labels" class="labels"></div>
+        </div>
+      </section>
+
+      <section id="transactions" class="panel">
+        <div class="section">
+          <h2>Transactions</h2>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Timestamp</th>
+                  <th>Action</th>
+                  <th>SKU</th>
+                  <th>Change</th>
+                  <th>Previous</th>
+                  <th>New</th>
+                  <th>Notes</th>
+                </tr>
+              </thead>
+              <tbody id="transactionsBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <div id="editModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="editTitle">
+    <div class="modal-box">
+      <h2 id="editTitle">Edit Rug</h2>
+      <form id="editForm" class="form-grid">
+        <label>SKU
+          <input name="sku" readonly>
+        </label>
+        <label>Name
+          <input name="name" required>
+        </label>
+        <label>Size
+          <input name="size" required>
+        </label>
+        <label>Color
+          <input name="color" required>
+        </label>
+        <label>Quantity
+          <input name="quantity" type="number" min="0" step="1" required>
+        </label>
+        <div class="full modal-actions">
+          <button id="cancelEditBtn" class="secondary" type="button">Cancel</button>
+          <button type="submit">Save changes</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script>
+    const FRONTEND_PASSWORD = 'change-me-lotus';
+    const state = {
+      password: '',
+      inventory: [],
+      transactions: [],
+      csvRows: [],
+      currentTab: 'dashboard'
+    };
+
+    const $ = selector => document.querySelector(selector);
+    const $$ = selector => Array.from(document.querySelectorAll(selector));
+
+    $('#loginForm').addEventListener('submit', async event => {
+      event.preventDefault();
+      const password = $('#passwordInput').value;
+      if (password !== FRONTEND_PASSWORD) {
+        showAuthNotice('Wrong password.', true);
+        return;
+      }
+      state.password = password;
+      $('#auth').hidden = true;
+      $('#app').hidden = false;
+      await loadAll();
+    });
+
+    $$('.tab').forEach(button => {
+      button.addEventListener('click', () => switchTab(button.dataset.tab));
+    });
+
+    $('#refreshBtn').addEventListener('click', loadAll);
+    $('#searchInput').addEventListener('input', renderDashboard);
+    $('#exportBtn').addEventListener('click', exportCsv);
+    $('#newRugBtn').addEventListener('click', () => switchTab('add'));
+    $('#printBtn').addEventListener('click', () => window.print());
+    $('#inventoryBody').addEventListener('click', handleInventoryAction);
+
+    $('#addForm').addEventListener('submit', async event => {
+      event.preventDefault();
+      const form = new FormData(event.currentTarget);
+      const rug = {
+        sku: form.get('sku'),
+        name: form.get('name'),
+        size: form.get('size'),
+        color: form.get('color'),
+        quantity: Number(form.get('quantity')),
+        mode: form.get('mode')
+      };
+      const response = await api('addOrUpdateRug', { rug });
+      if (response.success) {
+        event.currentTarget.reset();
+        event.currentTarget.quantity.value = 1;
+        await loadAll();
+        switchTab('dashboard');
+      }
+      showNotice(response.message, !response.success);
+    });
+
+    $('#lookupBtn').addEventListener('click', renderLookup);
+    $('#adjustSku').addEventListener('input', renderLookup);
+    $('#clearAdjustBtn').addEventListener('click', () => {
+      $('#adjustSku').value = '';
+      $('#lookupResult').hidden = true;
+    });
+
+    $('#adjustForm').addEventListener('submit', async event => {
+      event.preventDefault();
+      const rug = findRug($('#adjustSku').value);
+      if (!rug) {
+        showNotice('SKU not found.', true);
+        return;
+      }
+
+      const form = new FormData(event.currentTarget);
+      const quantity = Number(form.get('quantity'));
+      const direction = form.get('direction');
+      const quantityChange = direction === 'remove' ? -quantity : quantity;
+      const response = await api('adjustQuantity', {
+        sku: rug.SKU,
+        quantityChange,
+        notes: form.get('notes')
+      });
+
+      if (response.success) {
+        event.currentTarget.reset();
+        event.currentTarget.quantity.value = 1;
+        await loadAll();
+        renderLookup();
+      }
+      showNotice(response.message, !response.success);
+    });
+
+    $('#csvFile').addEventListener('change', handleCsvFile);
+    $('#clearImportBtn').addEventListener('click', clearImportPreview);
+    $('#importBtn').addEventListener('click', async () => {
+      const response = await api('importInventory', { rows: state.csvRows });
+      if (response.success) {
+        clearImportPreview();
+        await loadAll();
+        switchTab('dashboard');
+      }
+      showNotice(response.message, !response.success);
+    });
+
+    $('#editForm').addEventListener('submit', async event => {
+      event.preventDefault();
+      const form = new FormData(event.currentTarget);
+      const response = await api('updateRug', {
+        rug: {
+          sku: form.get('sku'),
+          name: form.get('name'),
+          size: form.get('size'),
+          color: form.get('color'),
+          quantity: Number(form.get('quantity'))
+        }
+      });
+
+      if (response.success) {
+        closeEditModal();
+        await loadAll();
+      }
+      showNotice(response.message, !response.success);
+    });
+
+    $('#cancelEditBtn').addEventListener('click', closeEditModal);
+    $('#editModal').addEventListener('click', event => {
+      if (event.target.id === 'editModal') closeEditModal();
+    });
+
+    async function loadAll() {
+      showNotice('Loading inventory...');
+      const inventoryResponse = await api('getInventory');
+      if (!inventoryResponse.success) {
+        showNotice(inventoryResponse.message, true);
+        return;
+      }
+
+      state.inventory = inventoryResponse.inventory || [];
+      renderDashboard();
+      renderBarcodes();
+
+      const transactionResponse = await api('getTransactions');
+      if (transactionResponse.success) {
+        state.transactions = transactionResponse.transactions || [];
+        renderTransactions();
+      }
+
+      showNotice('Inventory loaded.');
+    }
+
+    async function api(action, payload = {}) {
+      try {
+        const response = await fetch(location.href, {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+          body: JSON.stringify({ action, password: state.password, ...payload })
+        });
+        return await response.json();
+      } catch (error) {
+        return { success: false, message: error.message || String(error) };
+      }
+    }
+
+    function switchTab(tabName) {
+      state.currentTab = tabName;
+      $$('.tab').forEach(button => button.classList.toggle('active', button.dataset.tab === tabName));
+      $$('.panel').forEach(panel => panel.classList.toggle('active', panel.id === tabName));
+      if (tabName === 'barcodes') renderBarcodes();
+      if (tabName === 'transactions') renderTransactions();
+    }
+
+    function renderDashboard() {
+      const rows = filteredInventory();
+      const totalRugs = state.inventory.reduce((sum, rug) => sum + Number(rug.Quantity || 0), 0);
+      $('#totalRugs').textContent = totalRugs;
+      $('#uniqueSkus').textContent = state.inventory.length;
+      $('#sizeCount').textContent = new Set(state.inventory.map(rug => rug.Size).filter(Boolean)).size;
+      $('#colorCount').textContent = new Set(state.inventory.map(rug => rug.Color).filter(Boolean)).size;
+
+      $('#inventoryBody').innerHTML = rows.map(rug => `
+        <tr>
+          <td>${escapeHtml(rug.SKU)}</td>
+          <td>${escapeHtml(rug.Name)}</td>
+          <td>${escapeHtml(rug.Size)}</td>
+          <td>${escapeHtml(rug.Color)}</td>
+          <td>${Number(rug.Quantity || 0)}</td>
+          <td class="actions">
+            <button class="secondary" type="button" data-action="edit" data-sku="${escapeAttr(rug.SKU)}">Edit</button>
+            <button type="button" data-action="add" data-sku="${escapeAttr(rug.SKU)}">Add</button>
+            <button class="warn" type="button" data-action="remove" data-sku="${escapeAttr(rug.SKU)}">Remove</button>
+            <button class="danger" type="button" data-action="delete" data-sku="${escapeAttr(rug.SKU)}">Delete</button>
+          </td>
+        </tr>
+      `).join('') || '<tr><td colspan="6">No rugs found.</td></tr>';
+    }
+
+    function handleInventoryAction(event) {
+      const button = event.target.closest('button[data-action]');
+      if (!button) return;
+
+      const sku = button.dataset.sku;
+      const action = button.dataset.action;
+      if (action === 'edit') openEditModal(sku);
+      if (action === 'add') quickAdjust(sku, 1);
+      if (action === 'remove') quickAdjust(sku, -1);
+      if (action === 'delete') deleteSku(sku);
+    }
+
+    function renderLookup() {
+      const rug = findRug($('#adjustSku').value);
+      const box = $('#lookupResult');
+      if (!rug) {
+        box.hidden = !$('#adjustSku').value.trim();
+        box.innerHTML = '<strong>SKU not found</strong><span>Check the scan or enter a different SKU.</span>';
+        return;
+      }
+
+      box.hidden = false;
+      box.innerHTML = `
+        <strong>${escapeHtml(rug.SKU)} - ${escapeHtml(rug.Name)}</strong>
+        <span>Size: ${escapeHtml(rug.Size)} | Color: ${escapeHtml(rug.Color)} | Quantity: ${Number(rug.Quantity || 0)}</span>
+      `;
+    }
+
+    function renderBarcodes() {
+      $('#labels').innerHTML = state.inventory.map((rug, index) => `
+        <div class="label">
+          <strong>${escapeHtml(rug.SKU)}</strong>
+          <svg id="barcode-${index}"></svg>
+          <span>${escapeHtml(rug.Name)}</span>
+          <span>${escapeHtml(rug.Size)} | ${escapeHtml(rug.Color)}</span>
+        </div>
+      `).join('');
+
+      state.inventory.forEach((rug, index) => {
+        JsBarcode(`#barcode-${index}`, rug.BarcodeValue || rug.SKU, {
+          format: 'CODE128',
+          width: 1.6,
+          height: 44,
+          displayValue: false,
+          margin: 4
+        });
+      });
+    }
+
+    function renderTransactions() {
+      $('#transactionsBody').innerHTML = state.transactions.map(item => `
+        <tr>
+          <td>${formatDate(item.Timestamp)}</td>
+          <td>${escapeHtml(item.Action)}</td>
+          <td>${escapeHtml(item.SKU)}</td>
+          <td>${Number(item.QuantityChange || 0)}</td>
+          <td>${Number(item.PreviousQuantity || 0)}</td>
+          <td>${Number(item.NewQuantity || 0)}</td>
+          <td>${escapeHtml(item.Notes)}</td>
+        </tr>
+      `).join('') || '<tr><td colspan="7">No transactions yet.</td></tr>';
+    }
+
+    function filteredInventory() {
+      const query = $('#searchInput').value.trim().toLowerCase();
+      if (!query) return state.inventory;
+      return state.inventory.filter(rug =>
+        [rug.SKU, rug.Name, rug.Size, rug.Color].some(value => String(value || '').toLowerCase().includes(query))
+      );
+    }
+
+    function openEditModal(sku) {
+      const rug = findRug(sku);
+      if (!rug) return;
+      const form = $('#editForm');
+      form.sku.value = rug.SKU;
+      form.name.value = rug.Name;
+      form.size.value = rug.Size;
+      form.color.value = rug.Color;
+      form.quantity.value = Number(rug.Quantity || 0);
+      $('#editModal').classList.add('open');
+    }
+
+    function closeEditModal() {
+      $('#editModal').classList.remove('open');
+    }
+
+    async function quickAdjust(sku, quantityChange) {
+      const response = await api('adjustQuantity', {
+        sku,
+        quantityChange,
+        notes: quantityChange > 0 ? 'Quick add from dashboard' : 'Quick remove from dashboard'
+      });
+      if (response.success) await loadAll();
+      showNotice(response.message, !response.success);
+    }
+
+    async function deleteSku(sku) {
+      if (!confirm(`Delete ${sku}? This removes it from Inventory.`)) return;
+      const response = await api('deleteRug', { sku });
+      if (response.success) await loadAll();
+      showNotice(response.message, !response.success);
+    }
+
+    function findRug(sku) {
+      const clean = String(sku || '').trim().toUpperCase();
+      return state.inventory.find(rug => String(rug.SKU || '').toUpperCase() === clean);
+    }
+
+    async function handleCsvFile(event) {
+      const file = event.target.files[0];
+      if (!file) return;
+      const text = await file.text();
+      state.csvRows = parseCsv(text);
+      $('#importBtn').disabled = state.csvRows.length === 0;
+      $('#csvPreviewBody').innerHTML = state.csvRows.map(row => `
+        <tr>
+          <td>${escapeHtml(row.sku)}</td>
+          <td>${escapeHtml(row.name)}</td>
+          <td>${escapeHtml(row.size)}</td>
+          <td>${escapeHtml(row.color)}</td>
+          <td>${Number(row.quantity || 0)}</td>
+        </tr>
+      `).join('') || '<tr><td colspan="5">No valid rows found.</td></tr>';
+    }
+
+    function parseCsv(text) {
+      const lines = text.split(/\r?\n/).filter(line => line.trim());
+      if (lines.length < 2) return [];
+
+      const headers = splitCsvLine(lines[0]).map(header => header.trim().toLowerCase());
+      return lines.slice(1).map(line => {
+        const cells = splitCsvLine(line);
+        const record = {};
+        headers.forEach((header, index) => record[header] = cells[index] || '');
+        return {
+          sku: record.sku,
+          name: record.name,
+          size: record.size,
+          color: record.color,
+          quantity: Number(record.quantity || 0)
+        };
+      }).filter(row => row.name && row.size && row.color);
+    }
+
+    function splitCsvLine(line) {
+      const cells = [];
+      let current = '';
+      let inQuotes = false;
+      for (let i = 0; i < line.length; i++) {
+        const char = line[i];
+        const next = line[i + 1];
+        if (char === '"' && inQuotes && next === '"') {
+          current += '"';
+          i++;
+        } else if (char === '"') {
+          inQuotes = !inQuotes;
+        } else if (char === ',' && !inQuotes) {
+          cells.push(current);
+          current = '';
+        } else {
+          current += char;
+        }
+      }
+      cells.push(current);
+      return cells.map(cell => cell.trim());
+    }
+
+    function clearImportPreview() {
+      state.csvRows = [];
+      $('#csvFile').value = '';
+      $('#csvPreviewBody').innerHTML = '';
+      $('#importBtn').disabled = true;
+    }
+
+    function exportCsv() {
+      const headers = ['sku', 'name', 'size', 'color', 'quantity'];
+      const rows = state.inventory.map(rug => [rug.SKU, rug.Name, rug.Size, rug.Color, rug.Quantity]);
+      const csv = [headers, ...rows].map(row => row.map(csvCell).join(',')).join('\n');
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `lotus-rugs-inventory-${new Date().toISOString().slice(0, 10)}.csv`;
+      link.click();
+      URL.revokeObjectURL(url);
+    }
+
+    function csvCell(value) {
+      const text = String(value ?? '');
+      return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+    }
+
+    function showNotice(message, isError = false) {
+      const notice = $('#notice');
+      notice.textContent = message || '';
+      notice.className = `notice ${isError ? 'error' : message ? 'success' : ''}`;
+    }
+
+    function showAuthNotice(message, isError = false) {
+      const notice = $('#authNotice');
+      notice.textContent = message || '';
+      notice.className = `notice ${isError ? 'error' : ''}`;
+    }
+
+    function escapeHtml(value) {
+      return String(value ?? '').replace(/[&<>"']/g, char => ({
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#039;'
+      }[char]));
+    }
+
+    function escapeAttr(value) {
+      return escapeHtml(value).replace(/`/g, '&#096;');
+    }
+
+    function formatDate(value) {
+      if (!value) return '';
+      const date = new Date(value);
+      return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleString();
+    }
+  </script>
+</body>
+</html>

@@ -1,0 +1,396 @@
+const CONFIG = {
+  INVENTORY_SHEET: 'Inventory',
+  TRANSACTIONS_SHEET: 'Transactions',
+  INVENTORY_HEADERS: ['SKU', 'Name', 'Size', 'Color', 'Quantity', 'BarcodeValue', 'CreatedAt', 'UpdatedAt'],
+  TRANSACTION_HEADERS: ['Timestamp', 'Action', 'SKU', 'QuantityChange', 'PreviousQuantity', 'NewQuantity', 'Notes'],
+  PASSWORD: 'change-me-lotus'
+};
+
+function setupSheet() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  ensureSheet_(ss, CONFIG.INVENTORY_SHEET, CONFIG.INVENTORY_HEADERS);
+  ensureSheet_(ss, CONFIG.TRANSACTIONS_SHEET, CONFIG.TRANSACTION_HEADERS);
+  return jsonResponse_({ success: true, message: 'Sheets are ready.' });
+}
+
+function doGet() {
+  return HtmlService.createTemplateFromFile('Index')
+    .evaluate()
+    .setTitle('Lotus Rugs Inventory')
+    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+}
+
+function doPost(e) {
+  try {
+    const body = e && e.postData && e.postData.contents ? JSON.parse(e.postData.contents) : {};
+    const action = body.action;
+
+    if (!isPasswordValid_(body.password)) {
+      return jsonResponse_({ success: false, message: 'Invalid password.' });
+    }
+
+    switch (action) {
+      case 'getInventory':
+        return jsonResponse_(getInventory());
+      case 'addOrUpdateRug':
+        return jsonResponse_(addOrUpdateRug(body.rug || {}));
+      case 'updateRug':
+        return jsonResponse_(updateRug(body.rug || {}));
+      case 'adjustQuantity':
+        return jsonResponse_(adjustQuantity(body.sku, Number(body.quantityChange), body.notes || ''));
+      case 'deleteRug':
+        return jsonResponse_(deleteRug(body.sku));
+      case 'importInventory':
+        return jsonResponse_(importInventory(body.rows || []));
+      case 'getTransactions':
+        return jsonResponse_(getTransactions());
+      default:
+        return jsonResponse_({ success: false, message: 'Unknown action.' });
+    }
+  } catch (error) {
+    return jsonResponse_({ success: false, message: error.message || String(error) });
+  }
+}
+
+function getInventory() {
+  setupSheetsQuietly_();
+  const sheet = getInventorySheet_();
+  const values = sheet.getDataRange().getValues();
+  if (values.length <= 1) {
+    return { success: true, message: 'Inventory loaded.', inventory: [] };
+  }
+
+  const headers = values[0];
+  const rows = values.slice(1)
+    .filter(row => String(row[0] || '').trim())
+    .map(row => rowToObject_(headers, row));
+
+  return { success: true, message: 'Inventory loaded.', inventory: rows };
+}
+
+function addOrUpdateRug(rug) {
+  return withLock_(() => {
+    setupSheetsQuietly_();
+    const clean = normalizeRug_(rug);
+    if (!clean.SKU) clean.SKU = generateNextSku_();
+    validateRug_(clean);
+
+    const sheet = getInventorySheet_();
+    const rowNumber = findRowBySku_(sheet, clean.SKU);
+    const now = new Date();
+    const mode = String(rug.mode || 'add').toLowerCase();
+
+    if (rowNumber) {
+      const existing = getRugByRow_(sheet, rowNumber);
+      const previousQuantity = Number(existing.Quantity) || 0;
+      const incomingQuantity = Number(clean.Quantity) || 0;
+      const newQuantity = mode === 'replace' ? incomingQuantity : previousQuantity + incomingQuantity;
+
+      const updated = {
+        SKU: existing.SKU,
+        Name: clean.Name || existing.Name,
+        Size: clean.Size || existing.Size,
+        Color: clean.Color || existing.Color,
+        Quantity: newQuantity,
+        BarcodeValue: existing.BarcodeValue || existing.SKU,
+        CreatedAt: existing.CreatedAt || now,
+        UpdatedAt: now
+      };
+
+      writeInventoryRow_(sheet, rowNumber, updated);
+      logTransaction_('ADD_OR_UPDATE', clean.SKU, newQuantity - previousQuantity, previousQuantity, newQuantity, rug.notes || '');
+      return { success: true, message: 'Rug updated.', sku: clean.SKU };
+    }
+
+    const created = {
+      SKU: clean.SKU,
+      Name: clean.Name,
+      Size: clean.Size,
+      Color: clean.Color,
+      Quantity: Number(clean.Quantity) || 0,
+      BarcodeValue: clean.SKU,
+      CreatedAt: now,
+      UpdatedAt: now
+    };
+
+    sheet.appendRow(inventoryObjectToRow_(created));
+    logTransaction_('CREATE', clean.SKU, created.Quantity, 0, created.Quantity, rug.notes || '');
+    return { success: true, message: 'Rug added.', sku: clean.SKU };
+  });
+}
+
+function updateRug(rug) {
+  return withLock_(() => {
+    setupSheetsQuietly_();
+    const clean = normalizeRug_(rug);
+    if (!clean.SKU) throw new Error('SKU is required.');
+
+    const sheet = getInventorySheet_();
+    const rowNumber = findRowBySku_(sheet, clean.SKU);
+    if (!rowNumber) throw new Error('SKU not found.');
+
+    const existing = getRugByRow_(sheet, rowNumber);
+    const updated = {
+      SKU: existing.SKU,
+      Name: clean.Name,
+      Size: clean.Size,
+      Color: clean.Color,
+      Quantity: Number(clean.Quantity),
+      BarcodeValue: existing.BarcodeValue || existing.SKU,
+      CreatedAt: existing.CreatedAt,
+      UpdatedAt: new Date()
+    };
+
+    if (Number.isNaN(updated.Quantity) || updated.Quantity < 0) throw new Error('Quantity must be zero or more.');
+    writeInventoryRow_(sheet, rowNumber, updated);
+    return { success: true, message: 'Rug details saved.', sku: clean.SKU };
+  });
+}
+
+function adjustQuantity(sku, quantityChange, notes) {
+  return withLock_(() => {
+    setupSheetsQuietly_();
+    const cleanSku = String(sku || '').trim().toUpperCase();
+    if (!cleanSku) throw new Error('SKU is required.');
+    if (!Number.isFinite(quantityChange) || quantityChange === 0) throw new Error('Quantity change must not be zero.');
+
+    const sheet = getInventorySheet_();
+    const rowNumber = findRowBySku_(sheet, cleanSku);
+    if (!rowNumber) throw new Error('SKU not found.');
+
+    const existing = getRugByRow_(sheet, rowNumber);
+    const previousQuantity = Number(existing.Quantity) || 0;
+    const newQuantity = previousQuantity + quantityChange;
+    if (newQuantity < 0) throw new Error('Quantity cannot go below zero.');
+
+    existing.Quantity = newQuantity;
+    existing.UpdatedAt = new Date();
+    writeInventoryRow_(sheet, rowNumber, existing);
+    logTransaction_(quantityChange > 0 ? 'RECEIVE' : 'REMOVE', cleanSku, quantityChange, previousQuantity, newQuantity, notes || '');
+
+    return { success: true, message: 'Quantity adjusted.', sku: cleanSku, previousQuantity, newQuantity };
+  });
+}
+
+function deleteRug(sku) {
+  return withLock_(() => {
+    setupSheetsQuietly_();
+    const cleanSku = String(sku || '').trim().toUpperCase();
+    if (!cleanSku) throw new Error('SKU is required.');
+
+    const sheet = getInventorySheet_();
+    const rowNumber = findRowBySku_(sheet, cleanSku);
+    if (!rowNumber) throw new Error('SKU not found.');
+
+    const existing = getRugByRow_(sheet, rowNumber);
+    sheet.deleteRow(rowNumber);
+    logTransaction_('DELETE', cleanSku, -Number(existing.Quantity || 0), Number(existing.Quantity || 0), 0, 'Deleted SKU');
+
+    return { success: true, message: 'Rug deleted.', sku: cleanSku };
+  });
+}
+
+function importInventory(rows) {
+  return withLock_(() => {
+    setupSheetsQuietly_();
+    if (!Array.isArray(rows)) throw new Error('Rows must be an array.');
+
+    let added = 0;
+    let updated = 0;
+
+    rows.forEach(row => {
+      const clean = normalizeRug_(row);
+      if (!clean.SKU) clean.SKU = generateNextSku_();
+      validateRug_(clean);
+
+      const sheet = getInventorySheet_();
+      const rowNumber = findRowBySku_(sheet, clean.SKU);
+      const now = new Date();
+
+      if (rowNumber) {
+        const existing = getRugByRow_(sheet, rowNumber);
+        const updatedRug = {
+          SKU: existing.SKU,
+          Name: clean.Name || existing.Name,
+          Size: clean.Size || existing.Size,
+          Color: clean.Color || existing.Color,
+          Quantity: Number(clean.Quantity) || 0,
+          BarcodeValue: existing.BarcodeValue || existing.SKU,
+          CreatedAt: existing.CreatedAt || now,
+          UpdatedAt: now
+        };
+        writeInventoryRow_(sheet, rowNumber, updatedRug);
+        logTransaction_('IMPORT_UPDATE', clean.SKU, updatedRug.Quantity - Number(existing.Quantity || 0), Number(existing.Quantity || 0), updatedRug.Quantity, 'CSV import');
+        updated++;
+      } else {
+        const newRug = {
+          SKU: clean.SKU,
+          Name: clean.Name,
+          Size: clean.Size,
+          Color: clean.Color,
+          Quantity: Number(clean.Quantity) || 0,
+          BarcodeValue: clean.SKU,
+          CreatedAt: now,
+          UpdatedAt: now
+        };
+        sheet.appendRow(inventoryObjectToRow_(newRug));
+        logTransaction_('IMPORT_CREATE', clean.SKU, newRug.Quantity, 0, newRug.Quantity, 'CSV import');
+        added++;
+      }
+    });
+
+    return { success: true, message: `Import complete. Added ${added}, updated ${updated}.`, added, updated };
+  });
+}
+
+function getTransactions() {
+  setupSheetsQuietly_();
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(CONFIG.TRANSACTIONS_SHEET);
+  const values = sheet.getDataRange().getValues();
+  if (values.length <= 1) {
+    return { success: true, message: 'Transactions loaded.', transactions: [] };
+  }
+
+  const headers = values[0];
+  const transactions = values.slice(1)
+    .filter(row => row.some(cell => String(cell || '').trim()))
+    .map(row => rowToObject_(headers, row))
+    .reverse();
+
+  return { success: true, message: 'Transactions loaded.', transactions };
+}
+
+function include(filename) {
+  return HtmlService.createHtmlOutputFromFile(filename).getContent();
+}
+
+function setupSheetsQuietly_() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  ensureSheet_(ss, CONFIG.INVENTORY_SHEET, CONFIG.INVENTORY_HEADERS);
+  ensureSheet_(ss, CONFIG.TRANSACTIONS_SHEET, CONFIG.TRANSACTION_HEADERS);
+}
+
+function ensureSheet_(ss, name, headers) {
+  let sheet = ss.getSheetByName(name);
+  if (!sheet) sheet = ss.insertSheet(name);
+
+  const currentHeaders = sheet.getRange(1, 1, 1, headers.length).getValues()[0];
+  const hasHeaders = headers.every((header, index) => currentHeaders[index] === header);
+  if (!hasHeaders) {
+    sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+    sheet.setFrozenRows(1);
+  }
+  sheet.autoResizeColumns(1, headers.length);
+  return sheet;
+}
+
+function getInventorySheet_() {
+  return SpreadsheetApp.getActiveSpreadsheet().getSheetByName(CONFIG.INVENTORY_SHEET);
+}
+
+function findRowBySku_(sheet, sku) {
+  const cleanSku = String(sku || '').trim().toUpperCase();
+  if (!cleanSku || sheet.getLastRow() < 2) return null;
+
+  const values = sheet.getRange(2, 1, sheet.getLastRow() - 1, 1).getValues();
+  for (let i = 0; i < values.length; i++) {
+    if (String(values[i][0] || '').trim().toUpperCase() === cleanSku) {
+      return i + 2;
+    }
+  }
+  return null;
+}
+
+function getRugByRow_(sheet, rowNumber) {
+  const values = sheet.getRange(rowNumber, 1, 1, CONFIG.INVENTORY_HEADERS.length).getValues()[0];
+  return rowToObject_(CONFIG.INVENTORY_HEADERS, values);
+}
+
+function writeInventoryRow_(sheet, rowNumber, rug) {
+  sheet.getRange(rowNumber, 1, 1, CONFIG.INVENTORY_HEADERS.length).setValues([inventoryObjectToRow_(rug)]);
+}
+
+function inventoryObjectToRow_(rug) {
+  return [
+    rug.SKU,
+    rug.Name,
+    rug.Size,
+    rug.Color,
+    Number(rug.Quantity) || 0,
+    rug.BarcodeValue || rug.SKU,
+    rug.CreatedAt,
+    rug.UpdatedAt
+  ];
+}
+
+function rowToObject_(headers, row) {
+  return headers.reduce((object, header, index) => {
+    const value = row[index];
+    object[header] = value instanceof Date ? value.toISOString() : value;
+    return object;
+  }, {});
+}
+
+function normalizeRug_(rug) {
+  return {
+    SKU: String(rug.SKU || rug.sku || '').trim().toUpperCase(),
+    Name: String(rug.Name || rug.name || rug.description || '').trim(),
+    Size: String(rug.Size || rug.size || '').trim(),
+    Color: String(rug.Color || rug.color || '').trim(),
+    Quantity: Number(rug.Quantity ?? rug.quantity ?? 0)
+  };
+}
+
+function validateRug_(rug) {
+  if (!rug.SKU) throw new Error('SKU is required.');
+  if (!rug.Name) throw new Error('Name is required.');
+  if (!rug.Size) throw new Error('Size is required.');
+  if (!rug.Color) throw new Error('Color is required.');
+  if (!Number.isFinite(rug.Quantity) || rug.Quantity < 0) throw new Error('Quantity must be zero or more.');
+}
+
+function generateNextSku_() {
+  const sheet = getInventorySheet_();
+  if (!sheet || sheet.getLastRow() < 2) return 'RUG-0001';
+
+  const values = sheet.getRange(2, 1, sheet.getLastRow() - 1, 1).getValues().flat();
+  const maxNumber = values.reduce((max, sku) => {
+    const match = String(sku || '').match(/^RUG-(\d+)$/i);
+    return match ? Math.max(max, Number(match[1])) : max;
+  }, 0);
+
+  return `RUG-${String(maxNumber + 1).padStart(4, '0')}`;
+}
+
+function logTransaction_(action, sku, quantityChange, previousQuantity, newQuantity, notes) {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(CONFIG.TRANSACTIONS_SHEET);
+  sheet.appendRow([
+    new Date(),
+    action,
+    sku,
+    Number(quantityChange) || 0,
+    Number(previousQuantity) || 0,
+    Number(newQuantity) || 0,
+    notes || ''
+  ]);
+}
+
+function withLock_(callback) {
+  const lock = LockService.getDocumentLock();
+  try {
+    lock.waitLock(30000);
+    return callback();
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function isPasswordValid_(password) {
+  return String(password || '') === CONFIG.PASSWORD;
+}
+
+function jsonResponse_(payload) {
+  return ContentService
+    .createTextOutput(JSON.stringify(payload))
+    .setMimeType(ContentService.MimeType.JSON);
+}
