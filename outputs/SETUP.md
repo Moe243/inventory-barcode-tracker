@@ -41,8 +41,8 @@ The `setupSheet()` function creates these sheets automatically.
 
 ### Inventory
 
-| SKU | Name | Size | Color | Quantity | BarcodeValue | CreatedAt | UpdatedAt |
-| --- | --- | --- | --- | --- | --- | --- | --- |
+| SKU | Name | Design | Size | Color | Quantity | BarcodeValue | CreatedAt | UpdatedAt |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
 
 ### Transactions
 
@@ -54,16 +54,16 @@ The `setupSheet()` function creates these sheets automatically.
 CSV imports should use these headers:
 
 ```csv
-sku,design,size,color,quantity
-RUG-0001,Persian runner,3x10,Red,2
-RUG-0002,Wool area rug,8x10,Blue,1
+sku,name,design,size,color,quantity
+RUG-0001,Diamond,2010,8x10,Turquoise,2
+RUG-0002,Sofia,187,5x8,Blue,1
 ```
 
-Blank SKUs are allowed during import. The backend generates SKUs like `RUG-0001`, `RUG-0002`, and `RUG-0003`. Older CSV files with a `name` column still work; the app treats `name` as the design.
+Blank SKUs are allowed during import. The backend generates SKUs like `RUG-0001`, `RUG-0002`, and `RUG-0003`.
 
 ## Barcode Receiving Workflow
 
-1. Add a rug with design, size, and color.
+1. Add a rug with name, design, size, and color.
 2. Leave SKU blank so the app creates the next `RUG-0001` style SKU.
 3. Keep starting quantity at `0` if you plan to receive stock by scanning.
 4. Open `Barcodes`, select the SKUs you want, set label counts, and print.

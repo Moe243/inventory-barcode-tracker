@@ -183,7 +183,7 @@
 
     .metrics {
       display: grid;
-      grid-template-columns: repeat(5, minmax(0, 1fr));
+      grid-template-columns: repeat(6, minmax(0, 1fr));
       gap: 12px;
       margin-bottom: 14px;
     }
@@ -239,7 +239,7 @@
     }
 
     .filter-grid {
-      grid-template-columns: minmax(220px, 1fr) repeat(3, minmax(160px, 220px));
+      grid-template-columns: minmax(220px, 1fr) repeat(4, minmax(140px, 200px));
       margin-bottom: 12px;
     }
 
@@ -542,6 +542,7 @@
         <div class="metrics">
           <div class="metric"><span>Total Rugs</span><strong id="totalRugs">0</strong></div>
           <div class="metric"><span>Unique SKUs</span><strong id="uniqueSkus">0</strong></div>
+          <div class="metric"><span>Names</span><strong id="nameCount">0</strong></div>
           <div class="metric"><span>Designs</span><strong id="designCount">0</strong></div>
           <div class="metric"><span>Sizes</span><strong id="sizeCount">0</strong></div>
           <div class="metric"><span>Colors</span><strong id="colorCount">0</strong></div>
@@ -550,7 +551,10 @@
         <div class="section">
           <div class="filter-grid">
             <label>Search inventory
-              <input id="searchInput" type="search" placeholder="SKU, design, size, or color">
+              <input id="searchInput" type="search" placeholder="SKU, name, design, size, or color">
+            </label>
+            <label>Name
+              <select id="nameFilter"></select>
             </label>
             <label>Design
               <select id="designFilter"></select>
@@ -574,6 +578,7 @@
               <thead>
                 <tr>
                   <th>SKU</th>
+                  <th>Name</th>
                   <th>Design</th>
                   <th>Size</th>
                   <th>Color</th>
@@ -594,8 +599,11 @@
             <label>SKU
               <input name="sku" placeholder="Leave blank for auto SKU">
             </label>
-            <label>Design
+            <label>Name
               <input name="name" required>
+            </label>
+            <label>Design
+              <input name="design" placeholder="2010" required>
             </label>
             <label>Size
               <input name="size" placeholder="8x10" required>
@@ -623,7 +631,7 @@
         <div class="section">
           <h2>Scan / Count</h2>
           <div class="scan-grid">
-            <label>Find SKU by design, size, color, or SKU
+            <label>Find SKU by name, design, size, color, or SKU
               <input id="scanSearch" placeholder="Search before counting">
             </label>
             <label>Target SKU
@@ -670,7 +678,7 @@
       <section id="import" class="panel">
         <div class="section">
           <h2>Import CSV</h2>
-          <label>CSV file with headers: sku,design,size,color,quantity
+          <label>CSV file with headers: sku,name,design,size,color,quantity
             <input id="csvFile" type="file" accept=".csv,text/csv">
           </label>
           <div class="toolbar">
@@ -682,6 +690,7 @@
               <thead>
                 <tr>
                   <th>SKU</th>
+                  <th>Name</th>
                   <th>Design</th>
                   <th>Size</th>
                   <th>Color</th>
@@ -703,7 +712,7 @@
           <div class="label-controls">
             <div class="label-picker-grid">
               <label>Filter labels
-                <input id="labelSearch" type="search" placeholder="SKU, design, size, or color">
+                <input id="labelSearch" type="search" placeholder="SKU, name, design, size, or color">
               </label>
               <label>Default labels per SKU
                 <input id="defaultLabelCount" type="number" min="1" step="1" value="1">
@@ -717,6 +726,7 @@
                   <tr>
                     <th>Print</th>
                     <th>SKU</th>
+                    <th>Name</th>
                     <th>Design</th>
                     <th>Size</th>
                     <th>Color</th>
@@ -762,8 +772,11 @@
         <label>SKU
           <input name="sku" readonly>
         </label>
-        <label>Design
+        <label>Name
           <input name="name" required>
+        </label>
+        <label>Design
+          <input name="design" required>
         </label>
         <label>Size
           <input name="size" required>
@@ -824,6 +837,7 @@
 
     $('#refreshBtn').addEventListener('click', loadAll);
     $('#searchInput').addEventListener('input', renderDashboard);
+    $('#nameFilter').addEventListener('change', renderDashboard);
     $('#designFilter').addEventListener('change', renderDashboard);
     $('#sizeFilter').addEventListener('change', renderDashboard);
     $('#colorFilter').addEventListener('change', renderDashboard);
@@ -852,6 +866,7 @@
       const rug = {
         sku: form.get('sku'),
         name: form.get('name'),
+        design: form.get('design'),
         size: form.get('size'),
         color: form.get('color'),
         quantity: Number(form.get('quantity')),
@@ -887,6 +902,7 @@
         rug: {
           sku: form.get('sku'),
           name: form.get('name'),
+          design: form.get('design'),
           size: form.get('size'),
           color: form.get('color'),
           quantity: Number(form.get('quantity'))
@@ -991,7 +1007,8 @@
       const totalRugs = state.inventory.reduce((sum, rug) => sum + Number(rug.Quantity || 0), 0);
       $('#totalRugs').textContent = totalRugs;
       $('#uniqueSkus').textContent = state.inventory.length;
-      $('#designCount').textContent = new Set(state.inventory.map(rug => rug.Name).filter(Boolean)).size;
+      $('#nameCount').textContent = new Set(state.inventory.map(rug => rug.Name).filter(Boolean)).size;
+      $('#designCount').textContent = new Set(state.inventory.map(rug => rug.Design).filter(Boolean)).size;
       $('#sizeCount').textContent = new Set(state.inventory.map(rug => rug.Size).filter(Boolean)).size;
       $('#colorCount').textContent = new Set(state.inventory.map(rug => rug.Color).filter(Boolean)).size;
       $('#visibleCount').value = `${rows.length} of ${state.inventory.length}`;
@@ -1000,6 +1017,7 @@
         <tr>
           <td>${escapeHtml(rug.SKU)}</td>
           <td>${escapeHtml(rug.Name)}</td>
+          <td>${escapeHtml(rug.Design)}</td>
           <td>${escapeHtml(rug.Size)}</td>
           <td>${escapeHtml(rug.Color)}</td>
           <td>${Number(rug.Quantity || 0)}</td>
@@ -1010,11 +1028,12 @@
             <button class="danger" type="button" data-action="delete" data-sku="${escapeAttr(rug.SKU)}">Delete</button>
           </td>
         </tr>
-      `).join('') || '<tr><td colspan="6">No rugs found.</td></tr>';
+      `).join('') || '<tr><td colspan="7">No rugs found.</td></tr>';
     }
 
     function syncDashboardFilters() {
-      populateSelect($('#designFilter'), 'All designs', uniqueValues(state.inventory.map(rug => rug.Name)));
+      populateSelect($('#nameFilter'), 'All names', uniqueValues(state.inventory.map(rug => rug.Name)));
+      populateSelect($('#designFilter'), 'All designs', uniqueValues(state.inventory.map(rug => rug.Design)));
       populateSelect($('#sizeFilter'), 'All sizes', uniqueValues(state.inventory.map(rug => rug.Size)));
       populateSelect($('#colorFilter'), 'All colors', uniqueValues(state.inventory.map(rug => rug.Color)));
     }
@@ -1050,7 +1069,7 @@
           <strong>${escapeHtml(item.rug.SKU)}</strong>
           <svg id="barcode-${index}"></svg>
           <span>${escapeHtml(item.rug.Name)}</span>
-          <span>${escapeHtml(item.rug.Size)} | ${escapeHtml(item.rug.Color)}</span>
+          <span>${escapeHtml(item.rug.Design)} | ${escapeHtml(item.rug.Size)} | ${escapeHtml(item.rug.Color)}</span>
         </div>
       `).join('');
 
@@ -1081,12 +1100,14 @@
 
     function filteredInventory() {
       const query = $('#searchInput').value.trim().toLowerCase();
+      const name = $('#nameFilter').value;
       const design = $('#designFilter').value;
       const size = $('#sizeFilter').value;
       const color = $('#colorFilter').value;
       return state.inventory.filter(rug =>
-        (!query || [rug.SKU, rug.Name, rug.Size, rug.Color].some(value => String(value || '').toLowerCase().includes(query))) &&
-        (!design || rug.Name === design) &&
+        (!query || [rug.SKU, rug.Name, rug.Design, rug.Size, rug.Color].some(value => String(value || '').toLowerCase().includes(query))) &&
+        (!name || rug.Name === name) &&
+        (!design || rug.Design === design) &&
         (!size || rug.Size === size) &&
         (!color || rug.Color === color)
       );
@@ -1096,11 +1117,11 @@
       const previousSku = $('#scanSkuSelect').value;
       const query = $('#scanSearch').value.trim().toLowerCase();
       const matches = state.inventory.filter(rug =>
-        !query || [rug.SKU, rug.Name, rug.Size, rug.Color].some(value => String(value || '').toLowerCase().includes(query))
+        !query || [rug.SKU, rug.Name, rug.Design, rug.Size, rug.Color].some(value => String(value || '').toLowerCase().includes(query))
       );
 
       $('#scanSkuSelect').innerHTML = matches.map(rug => `
-        <option value="${escapeAttr(rug.SKU)}">${escapeHtml(rug.SKU)} - ${escapeHtml(rug.Name)} - ${escapeHtml(rug.Size)} - ${escapeHtml(rug.Color)}</option>
+        <option value="${escapeAttr(rug.SKU)}">${escapeHtml(rug.SKU)} - ${escapeHtml(rug.Name)} - ${escapeHtml(rug.Design)} - ${escapeHtml(rug.Size)} - ${escapeHtml(rug.Color)}</option>
       `).join('');
 
       const selectedStillVisible = matches.some(rug => rug.SKU === previousSku);
@@ -1120,7 +1141,7 @@
 
       const direction = $('#scanDirection').value === 'remove' ? 'Remove' : 'Receive';
       card.innerHTML = `
-        <strong>${escapeHtml(direction)}: ${escapeHtml(rug.SKU)} - ${escapeHtml(rug.Name)}</strong>
+        <strong>${escapeHtml(direction)}: ${escapeHtml(rug.SKU)} - ${escapeHtml(rug.Name)} ${escapeHtml(rug.Design)}</strong>
         <span>Size: ${escapeHtml(rug.Size)} | Color: ${escapeHtml(rug.Color)} | Current quantity: ${Number(rug.Quantity || 0)}</span>
       `;
     }
@@ -1251,7 +1272,7 @@
     function renderLabelPicker() {
       const query = $('#labelSearch').value.trim().toLowerCase();
       const rows = state.inventory.filter(rug =>
-        !query || [rug.SKU, rug.Name, rug.Size, rug.Color].some(value => String(value || '').toLowerCase().includes(query))
+        !query || [rug.SKU, rug.Name, rug.Design, rug.Size, rug.Color].some(value => String(value || '').toLowerCase().includes(query))
       );
 
       $('#labelPickerBody').innerHTML = rows.map(rug => {
@@ -1261,12 +1282,13 @@
             <td><input type="checkbox" data-label-check="${escapeAttr(rug.SKU)}" ${count > 0 ? 'checked' : ''}></td>
             <td>${escapeHtml(rug.SKU)}</td>
             <td>${escapeHtml(rug.Name)}</td>
+            <td>${escapeHtml(rug.Design)}</td>
             <td>${escapeHtml(rug.Size)}</td>
             <td>${escapeHtml(rug.Color)}</td>
             <td><input type="number" min="1" step="1" value="${count || Number($('#defaultLabelCount').value || 1)}" data-label-count="${escapeAttr(rug.SKU)}"></td>
           </tr>
         `;
-      }).join('') || '<tr><td colspan="6">No labels match.</td></tr>';
+      }).join('') || '<tr><td colspan="7">No labels match.</td></tr>';
       renderBarcodes();
     }
 
@@ -1323,6 +1345,7 @@
       const form = $('#editForm');
       form.sku.value = rug.SKU;
       form.name.value = rug.Name;
+      form.design.value = rug.Design || '';
       form.size.value = rug.Size;
       form.color.value = rug.Color;
       form.quantity.value = Number(rug.Quantity || 0);
@@ -1365,11 +1388,12 @@
         <tr>
           <td>${escapeHtml(row.sku)}</td>
           <td>${escapeHtml(row.name)}</td>
+          <td>${escapeHtml(row.design)}</td>
           <td>${escapeHtml(row.size)}</td>
           <td>${escapeHtml(row.color)}</td>
           <td>${Number(row.quantity || 0)}</td>
         </tr>
-      `).join('') || '<tr><td colspan="5">No valid rows found.</td></tr>';
+      `).join('') || '<tr><td colspan="6">No valid rows found.</td></tr>';
     }
 
     function parseCsv(text) {
@@ -1383,12 +1407,13 @@
         headers.forEach((header, index) => record[header] = cells[index] || '');
         return {
           sku: record.sku,
-          name: record.design || record.name,
+          name: record.name || record.collection,
+          design: record.design || record.pattern,
           size: record.size,
           color: record.color,
           quantity: Number(record.quantity || 0)
         };
-      }).filter(row => row.name && row.size && row.color);
+      }).filter(row => row.name && row.design && row.size && row.color);
     }
 
     function splitCsvLine(line) {
@@ -1422,8 +1447,8 @@
     }
 
     function exportCsv() {
-      const headers = ['sku', 'design', 'size', 'color', 'quantity'];
-      const rows = state.inventory.map(rug => [rug.SKU, rug.Name, rug.Size, rug.Color, rug.Quantity]);
+      const headers = ['sku', 'name', 'design', 'size', 'color', 'quantity'];
+      const rows = state.inventory.map(rug => [rug.SKU, rug.Name, rug.Design, rug.Size, rug.Color, rug.Quantity]);
       const csv = [headers, ...rows].map(row => row.map(csvCell).join(',')).join('\n');
       const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
       const url = URL.createObjectURL(blob);

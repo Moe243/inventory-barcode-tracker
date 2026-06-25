@@ -1,7 +1,7 @@
 const CONFIG = {
   INVENTORY_SHEET: 'Inventory',
   TRANSACTIONS_SHEET: 'Transactions',
-  INVENTORY_HEADERS: ['SKU', 'Name', 'Size', 'Color', 'Quantity', 'BarcodeValue', 'CreatedAt', 'UpdatedAt'],
+  INVENTORY_HEADERS: ['SKU', 'Name', 'Design', 'Size', 'Color', 'Quantity', 'BarcodeValue', 'CreatedAt', 'UpdatedAt'],
   TRANSACTION_HEADERS: ['Timestamp', 'Action', 'SKU', 'QuantityChange', 'PreviousQuantity', 'NewQuantity', 'Notes'],
   PASSWORD: 'change-me-lotus'
 };
@@ -100,6 +100,7 @@ function addOrUpdateRug(rug) {
       const updated = {
         SKU: existing.SKU,
         Name: clean.Name || existing.Name,
+        Design: clean.Design || existing.Design,
         Size: clean.Size || existing.Size,
         Color: clean.Color || existing.Color,
         Quantity: newQuantity,
@@ -116,6 +117,7 @@ function addOrUpdateRug(rug) {
     const created = {
       SKU: clean.SKU,
       Name: clean.Name,
+      Design: clean.Design,
       Size: clean.Size,
       Color: clean.Color,
       Quantity: Number(clean.Quantity) || 0,
@@ -144,6 +146,7 @@ function updateRug(rug) {
     const updated = {
       SKU: existing.SKU,
       Name: clean.Name,
+      Design: clean.Design,
       Size: clean.Size,
       Color: clean.Color,
       Quantity: Number(clean.Quantity),
@@ -223,6 +226,7 @@ function importInventory(rows) {
         const updatedRug = {
           SKU: existing.SKU,
           Name: clean.Name || existing.Name,
+          Design: clean.Design || existing.Design,
           Size: clean.Size || existing.Size,
           Color: clean.Color || existing.Color,
           Quantity: Number(clean.Quantity) || 0,
@@ -237,6 +241,7 @@ function importInventory(rows) {
         const newRug = {
           SKU: clean.SKU,
           Name: clean.Name,
+          Design: clean.Design,
           Size: clean.Size,
           Color: clean.Color,
           Quantity: Number(clean.Quantity) || 0,
@@ -285,10 +290,39 @@ function ensureSheet_(ss, name, headers) {
   let sheet = ss.getSheetByName(name);
   if (!sheet) sheet = ss.insertSheet(name);
 
-  const currentHeaders = sheet.getRange(1, 1, 1, headers.length).getValues()[0];
-  const hasHeaders = headers.every((header, index) => currentHeaders[index] === header);
-  if (!hasHeaders) {
+  const lastRow = sheet.getLastRow();
+  const lastColumn = Math.max(sheet.getLastColumn(), headers.length);
+  if (lastRow === 0) {
     sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+    sheet.setFrozenRows(1);
+    sheet.autoResizeColumns(1, headers.length);
+    return sheet;
+  }
+
+  const values = sheet.getRange(1, 1, lastRow, lastColumn).getValues();
+  const currentHeaders = values[0].map(header => String(header || '').trim());
+  const hasHeaders = headers.length === currentHeaders.filter(Boolean).length &&
+    headers.every((header, index) => currentHeaders[index] === header);
+
+  if (!hasHeaders) {
+    const headerIndex = currentHeaders.reduce((index, header, columnIndex) => {
+      if (header) index[header] = columnIndex;
+      return index;
+    }, {});
+    const remappedRows = values.slice(1)
+      .filter(row => row.some(cell => String(cell || '').trim()))
+      .map(row => headers.map(header => {
+        if (Object.prototype.hasOwnProperty.call(headerIndex, header)) {
+          return row[headerIndex[header]];
+        }
+        return '';
+      }));
+
+    sheet.clearContents();
+    sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+    if (remappedRows.length) {
+      sheet.getRange(2, 1, remappedRows.length, headers.length).setValues(remappedRows);
+    }
     sheet.setFrozenRows(1);
   }
   sheet.autoResizeColumns(1, headers.length);
@@ -325,6 +359,7 @@ function inventoryObjectToRow_(rug) {
   return [
     rug.SKU,
     rug.Name,
+    rug.Design,
     rug.Size,
     rug.Color,
     Number(rug.Quantity) || 0,
@@ -345,7 +380,8 @@ function rowToObject_(headers, row) {
 function normalizeRug_(rug) {
   return {
     SKU: String(rug.SKU || rug.sku || '').trim().toUpperCase(),
-    Name: String(rug.Name || rug.name || rug.design || rug.description || '').trim(),
+    Name: String(rug.Name || rug.name || rug.collection || '').trim(),
+    Design: String(rug.Design || rug.design || rug.pattern || '').trim(),
     Size: String(rug.Size || rug.size || '').trim(),
     Color: String(rug.Color || rug.color || '').trim(),
     Quantity: Number(rug.Quantity ?? rug.quantity ?? 0)
@@ -355,6 +391,7 @@ function normalizeRug_(rug) {
 function validateRug_(rug) {
   if (!rug.SKU) throw new Error('SKU is required.');
   if (!rug.Name) throw new Error('Name is required.');
+  if (!rug.Design) throw new Error('Design is required.');
   if (!rug.Size) throw new Error('Size is required.');
   if (!rug.Color) throw new Error('Color is required.');
   if (!Number.isFinite(rug.Quantity) || rug.Quantity < 0) throw new Error('Quantity must be zero or more.');
