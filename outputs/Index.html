@@ -367,6 +367,14 @@
       background: #0f172a;
     }
 
+    .camera-capture-input {
+      position: absolute;
+      left: -9999px;
+      width: 1px;
+      height: 1px;
+      opacity: 0;
+    }
+
     .muted {
       color: var(--muted);
       font-size: 13px;
@@ -658,8 +666,10 @@
             </div>
             <div class="button-row">
               <button id="startScannerBtn" type="button">Start camera scanner</button>
+              <button id="photoScanBtn" class="secondary" type="button">Scan from photo</button>
               <button id="stopScannerBtn" class="secondary" type="button" disabled>Stop scanner</button>
             </div>
+            <input id="photoScanInput" class="camera-capture-input" type="file" accept="image/*" capture="environment">
             <form id="manualScanForm" class="form-grid">
               <label class="full">Type or hardware-scan barcode
                 <input id="manualScanInput" name="manualScanInput" placeholder="Scan or type SKU, then press Enter">
@@ -858,6 +868,8 @@
     $('#undoCountBtn').addEventListener('click', undoPendingCount);
     $('#resetCountBtn').addEventListener('click', resetPendingCount);
     $('#startScannerBtn').addEventListener('click', startScanner);
+    $('#photoScanBtn').addEventListener('click', startPhotoScan);
+    $('#photoScanInput').addEventListener('change', handlePhotoScan);
     $('#stopScannerBtn').addEventListener('click', stopScanner);
     $('#manualScanForm').addEventListener('submit', handleManualScan);
     $('#scanSubmitForm').addEventListener('submit', submitScannedCount);
@@ -1234,6 +1246,40 @@
       state.scannerControls = null;
       $('#startScannerBtn').disabled = false;
       $('#stopScannerBtn').disabled = true;
+    }
+
+    function startPhotoScan() {
+      if (!getSelectedScanRug()) {
+        showScanNotice('Choose a target SKU before scanning a photo.', true);
+        return;
+      }
+      const input = $('#photoScanInput');
+      input.value = '';
+      input.click();
+    }
+
+    async function handlePhotoScan(event) {
+      const file = event.target.files && event.target.files[0];
+      if (!file) return;
+
+      if (!window.ZXingBrowser || !ZXingBrowser.BrowserMultiFormatReader) {
+        showScanNotice('Scanner library did not load. You can still use Count one or type/scan the barcode into the barcode box.', true);
+        return;
+      }
+
+      const objectUrl = URL.createObjectURL(file);
+      showScanNotice('Reading barcode from photo...');
+      try {
+        const reader = new ZXingBrowser.BrowserMultiFormatReader();
+        const result = await reader.decodeFromImageUrl(objectUrl);
+        const code = typeof result.getText === 'function' ? result.getText() : String(result.text || result);
+        handleScannedCode(code);
+      } catch (error) {
+        showScanNotice('Could not find a barcode in that photo. Retake it close, flat, bright, and make sure the whole barcode is visible.', true);
+      } finally {
+        URL.revokeObjectURL(objectUrl);
+        event.target.value = '';
+      }
     }
 
     function handleScannedCode(code) {
