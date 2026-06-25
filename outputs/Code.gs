@@ -13,7 +13,12 @@ function setupSheet() {
   return jsonResponse_({ success: true, message: 'Sheets are ready.' });
 }
 
-function doGet() {
+function doGet(e) {
+  const params = e && e.parameter ? e.parameter : {};
+  if (params.callback) {
+    return jsonpResponse_(params.callback, handleApiAction_(params.action, params.password, params));
+  }
+
   return HtmlService.createTemplateFromFile('Index')
     .evaluate()
     .setTitle('Lotus Rugs Inventory')
@@ -53,6 +58,10 @@ function apiUpdateRug(password, rug) {
 
 function apiAdjustQuantity(password, sku, quantityChange, notes) {
   return handleApiAction_('adjustQuantity', password, { sku, quantityChange, notes });
+}
+
+function apiBatchAdjustQuantity(password, rows, notes) {
+  return handleApiAction_('batchAdjustQuantity', password, { rows, notes });
 }
 
 function apiDeleteRug(password, sku) {
@@ -218,6 +227,54 @@ function adjustQuantity(sku, quantityChange, notes) {
     logTransaction_(quantityChange > 0 ? 'RECEIVE' : 'REMOVE', cleanSku, quantityChange, previousQuantity, newQuantity, notes || '');
 
     return { success: true, message: 'Quantity adjusted.', sku: cleanSku, previousQuantity, newQuantity, rug: serializeRug_(existing) };
+  });
+}
+
+function batchAdjustQuantity(rows, notes) {
+  return withLock_(() => {
+    setupSheetsQuietly_();
+    const parsedRows = typeof rows === 'string' ? JSON.parse(rows || '[]') : rows;
+    if (!Array.isArray(parsedRows) || parsedRows.length === 0) throw new Error('No scan counts to submit.');
+
+    const sheet = getInventorySheet_();
+    const updates = [];
+    parsedRows.forEach(row => {
+      const cleanSku = String(row.sku || row.SKU || '').trim().toUpperCase();
+      const quantityChange = Number(row.quantityChange || row.change || 0);
+      if (!cleanSku) throw new Error('SKU is required.');
+      if (!Number.isFinite(quantityChange) || quantityChange === 0) throw new Error(`Quantity change must not be zero for ${cleanSku}.`);
+
+      const rowNumber = findRowBySku_(sheet, cleanSku);
+      if (!rowNumber) throw new Error(`${cleanSku} was not found.`);
+
+      const existing = getRugByRow_(sheet, rowNumber);
+      const previousQuantity = Number(existing.Quantity) || 0;
+      const newQuantity = previousQuantity + quantityChange;
+      if (newQuantity < 0) throw new Error(`${cleanSku} cannot go below zero.`);
+
+      updates.push({ rowNumber, existing, cleanSku, quantityChange, previousQuantity, newQuantity });
+    });
+
+    const submittedAt = new Date();
+    updates.forEach(update => {
+      update.existing.Quantity = update.newQuantity;
+      update.existing.UpdatedAt = submittedAt;
+      writeInventoryRow_(sheet, update.rowNumber, update.existing);
+      logTransaction_(
+        update.quantityChange > 0 ? 'RECEIVE' : 'REMOVE',
+        update.cleanSku,
+        update.quantityChange,
+        update.previousQuantity,
+        update.newQuantity,
+        notes || 'Mobile scanner batch'
+      );
+    });
+
+    return {
+      success: true,
+      message: `Submitted ${updates.length} scanned SKU${updates.length === 1 ? '' : 's'}.`,
+      rugs: updates.map(update => serializeRug_(update.existing))
+    };
   });
 }
 
@@ -548,6 +605,8 @@ function handleApiAction_(action, password, body) {
         return updateRug(body.rug || {});
       case 'adjustQuantity':
         return adjustQuantity(body.sku, Number(body.quantityChange), body.notes || '');
+      case 'batchAdjustQuantity':
+        return batchAdjustQuantity(body.rows || [], body.notes || '');
       case 'deleteRug':
         return deleteRug(body.sku);
       case 'importInventory':
@@ -566,4 +625,14 @@ function jsonResponse_(payload) {
   return ContentService
     .createTextOutput(JSON.stringify(payload))
     .setMimeType(ContentService.MimeType.JSON);
+}
+
+function jsonpResponse_(callback, payload) {
+  const cleanCallback = String(callback || '').trim();
+  const safeCallback = /^[A-Za-z_$][\w$]*(\.[A-Za-z_$][\w$]*)*$/.test(cleanCallback)
+    ? cleanCallback
+    : 'callback';
+  return ContentService
+    .createTextOutput(`${safeCallback}(${JSON.stringify(payload)});`)
+    .setMimeType(ContentService.MimeType.JAVASCRIPT);
 }

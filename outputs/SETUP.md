@@ -6,6 +6,7 @@ This project uses Google Sheets as the inventory database and Google Apps Script
 
 - `Code.gs`: Apps Script backend.
 - `Index.html`: Web app frontend.
+- `docs/scanner.html`: separate mobile live scanner page for GitHub Pages.
 
 ## Setup Steps
 
@@ -26,6 +27,33 @@ This project uses Google Sheets as the inventory database and Google Apps Script
    - Click `Deploy`.
 10. Copy the Web App URL.
 11. Open the Web App URL and test adding rugs, filtering by design/size/color, scanning/counting inventory, exporting, and printing selected barcode labels.
+
+## Mobile Live Scanner Setup
+
+The main Apps Script app can stay as your dashboard. The live warehouse scanner should run from the separate mobile web page in `docs/scanner.html`, because iPhone Safari/Chrome may block live camera access inside the Apps Script web app frame.
+
+1. Paste the updated `Code.gs` into Apps Script.
+2. Save and deploy a **New version** of the Apps Script web app.
+3. In GitHub, open the repository settings for `inventory-barcode-tracker`.
+4. Go to `Pages`.
+5. Set source to `Deploy from a branch`.
+6. Set branch to `main` and folder to `/docs`.
+7. Save.
+8. Open the GitHub Pages scanner URL on your iPhone.
+9. Enter the Apps Script `/exec` URL and app password.
+10. Tap `Load inventory`.
+11. Choose `Receive` or `Remove`.
+12. Tap `Start live scanner` and allow camera permission.
+
+The scanner page works in warehouse batch mode:
+
+- Scan any known rug SKU.
+- Pending counts are grouped by SKU.
+- Receive scans submit positive quantity changes.
+- Remove scans submit negative quantity changes.
+- Nothing changes in the sheet until you tap `Submit batch`.
+
+You can also check `Require selected SKU` if you only want one selected SKU to count and want mismatched labels rejected.
 
 ## Embed On Your Website
 
@@ -71,6 +99,16 @@ Blank SKUs are allowed during import. The backend generates readable SKUs like `
 6. Matching scans increase the pending count. Wrong SKUs show a warning and do not count.
 7. Press `Submit scanned count` when the batch is done.
 
+## Mobile Warehouse Workflow
+
+1. Print barcode labels from the main app.
+2. Open the GitHub Pages scanner on your iPhone.
+3. Load inventory.
+4. Choose `Receive` for incoming rugs or `Remove` for outgoing rugs.
+5. Walk the warehouse and scan labels live.
+6. Review the pending batch.
+7. Submit the batch once when finished.
+
 ## Security Notes
 
 This setup is intended for internal warehouse use.
@@ -87,6 +125,7 @@ That means anyone who has the deployed web app link and password can access the 
 - Writes use `LockService` so two people adjusting inventory at the same time are less likely to overwrite each other.
 - Barcode labels use JsBarcode CODE128 from a CDN.
 - Camera scanning uses the ZXing browser barcode library from a CDN.
+- The separate mobile scanner also uses ZXing and submits grouped scan batches through Apps Script.
 - Existing SKUs in the Add Rug form can either add to the current quantity or replace the current quantity.
 - The Add Rug form has buttons for adding another rug with the same name/design or starting a new rug.
 - The app prevents duplicate `Name + Design + Size + Color` rows.

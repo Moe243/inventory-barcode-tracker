@@ -1,0 +1,763 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Lotus Scanner">
+  <title>Lotus Rugs Mobile Scanner</title>
+  <script src="https://cdn.jsdelivr.net/npm/@zxing/browser@0.1.5/umd/zxing-browser.min.js"></script>
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #172033;
+      --muted: #64748b;
+      --line: #d7dde8;
+      --paper: #f6f8fb;
+      --panel: #ffffff;
+      --accent: #087f5b;
+      --accent-dark: #05634a;
+      --warn: #b42318;
+      --gold: #b7791f;
+      --blue: #2563eb;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color: var(--ink);
+      background: var(--paper);
+    }
+
+    header {
+      position: sticky;
+      top: 0;
+      z-index: 5;
+      background: var(--panel);
+      border-bottom: 1px solid var(--line);
+      padding: calc(12px + env(safe-area-inset-top)) 14px 12px;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 20px;
+      line-height: 1.2;
+    }
+
+    main {
+      display: grid;
+      gap: 12px;
+      padding: 12px 12px calc(20px + env(safe-area-inset-bottom));
+      max-width: 760px;
+      margin: 0 auto;
+    }
+
+    section {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 12px;
+      display: grid;
+      gap: 10px;
+    }
+
+    label {
+      display: grid;
+      gap: 5px;
+      font-size: 13px;
+      font-weight: 700;
+      color: #334155;
+    }
+
+    input,
+    select,
+    textarea,
+    button {
+      width: 100%;
+      font: inherit;
+      border-radius: 8px;
+    }
+
+    input,
+    select,
+    textarea {
+      border: 1px solid var(--line);
+      background: #fff;
+      color: var(--ink);
+      padding: 11px;
+      font-size: 16px;
+    }
+
+    textarea {
+      resize: vertical;
+    }
+
+    button {
+      border: 0;
+      background: var(--accent);
+      color: #fff;
+      padding: 12px;
+      font-weight: 800;
+      cursor: pointer;
+    }
+
+    button.secondary {
+      background: #e2e8f0;
+      color: var(--ink);
+    }
+
+    button.danger {
+      background: var(--warn);
+    }
+
+    button:disabled {
+      opacity: .55;
+      cursor: not-allowed;
+    }
+
+    .row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+
+    .toolbar {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .toolbar > * {
+      flex: 1 1 140px;
+    }
+
+    .mode {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+
+    .mode button {
+      background: #e2e8f0;
+      color: var(--ink);
+    }
+
+    .mode button.active.receive {
+      background: var(--accent);
+      color: #fff;
+    }
+
+    .mode button.active.remove {
+      background: var(--warn);
+      color: #fff;
+    }
+
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+    }
+
+    .stat {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #f8fafc;
+      padding: 10px;
+    }
+
+    .stat strong {
+      display: block;
+      font-size: 24px;
+      line-height: 1;
+    }
+
+    .stat span,
+    .muted {
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .notice {
+      min-height: 20px;
+      color: var(--accent-dark);
+      font-weight: 800;
+    }
+
+    .notice.error {
+      color: var(--warn);
+    }
+
+    .notice.warn {
+      color: var(--gold);
+    }
+
+    .camera {
+      background: #0f172a;
+      border-radius: 8px;
+      overflow: hidden;
+      min-height: 240px;
+    }
+
+    video {
+      display: block;
+      width: 100%;
+      min-height: 240px;
+      max-height: 52vh;
+      object-fit: cover;
+      background: #0f172a;
+    }
+
+    .target-toggle {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-weight: 700;
+      color: #334155;
+    }
+
+    .target-toggle input {
+      width: auto;
+      transform: scale(1.2);
+    }
+
+    .result-list {
+      display: grid;
+      gap: 6px;
+      max-height: 180px;
+      overflow: auto;
+    }
+
+    .result-item,
+    .pending-row {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+      padding: 9px;
+      display: grid;
+      gap: 4px;
+    }
+
+    .result-item {
+      text-align: left;
+      color: var(--ink);
+    }
+
+    .result-item.selected {
+      border-color: var(--blue);
+      box-shadow: 0 0 0 2px rgba(37, 99, 235, .12);
+    }
+
+    .sku {
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-weight: 900;
+      word-break: break-word;
+    }
+
+    .pending-row {
+      grid-template-columns: 1fr auto;
+      align-items: center;
+    }
+
+    .pending-change {
+      font-size: 22px;
+      font-weight: 900;
+      color: var(--accent-dark);
+    }
+
+    .pending-change.negative {
+      color: var(--warn);
+    }
+
+    .small-actions {
+      display: flex;
+      gap: 6px;
+    }
+
+    .small-actions button {
+      padding: 8px 10px;
+      font-size: 13px;
+    }
+
+    .hidden {
+      display: none !important;
+    }
+
+    @media (max-width: 560px) {
+      .row,
+      .stats {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Lotus Rugs Mobile Scanner</h1>
+    <div id="headerStatus" class="muted">Load inventory, choose Receive or Remove, then start scanning.</div>
+  </header>
+
+  <main>
+    <section id="setupSection">
+      <label>Apps Script web app URL
+        <input id="apiUrlInput" autocomplete="url">
+      </label>
+      <label>Password
+        <input id="passwordInput" type="password" autocomplete="current-password">
+      </label>
+      <div class="toolbar">
+        <button id="loadBtn" type="button">Load inventory</button>
+        <button id="refreshBtn" class="secondary" type="button">Refresh</button>
+      </div>
+      <div id="setupNotice" class="notice"></div>
+    </section>
+
+    <section>
+      <div class="mode">
+        <button id="receiveModeBtn" class="active receive" type="button">Receive</button>
+        <button id="removeModeBtn" type="button">Remove</button>
+      </div>
+
+      <div class="stats">
+        <div class="stat"><strong id="loadedCount">0</strong><span>SKUs loaded</span></div>
+        <div class="stat"><strong id="pendingPieces">0</strong><span>Pending pieces</span></div>
+        <div class="stat"><strong id="pendingSkus">0</strong><span>Pending SKUs</span></div>
+      </div>
+
+      <label class="target-toggle">
+        <input id="targetOnlyInput" type="checkbox">
+        Require selected SKU
+      </label>
+
+      <label>Find or select target SKU
+        <input id="searchInput" type="search" placeholder="Name, design, size, color, or SKU">
+      </label>
+      <div id="resultList" class="result-list"></div>
+    </section>
+
+    <section>
+      <div class="camera">
+        <video id="video" muted playsinline></video>
+      </div>
+      <div class="toolbar">
+        <button id="startBtn" type="button">Start live scanner</button>
+        <button id="stopBtn" class="secondary" type="button" disabled>Stop</button>
+      </div>
+      <form id="manualForm" class="row">
+        <label>Manual or hardware scan
+          <input id="manualInput" placeholder="Scan/type SKU and press Enter">
+        </label>
+        <button type="submit">Count</button>
+      </form>
+      <div id="scanNotice" class="notice"></div>
+    </section>
+
+    <section>
+      <label>Batch notes
+        <textarea id="notesInput" rows="2" placeholder="Receiving batch, outgoing order, stock check, etc."></textarea>
+      </label>
+      <div id="pendingList"></div>
+      <div class="toolbar">
+        <button id="submitBtn" type="button" disabled>Submit batch</button>
+        <button id="clearBtn" class="secondary" type="button" disabled>Clear batch</button>
+      </div>
+      <div id="submitNotice" class="notice"></div>
+    </section>
+  </main>
+
+  <script>
+    const DEFAULT_API_URL = 'https://script.google.com/macros/s/AKfycbzSniBOoKRH74rHd3KOAJi52I-HLVg5hvOztCH-UpNeD4ehOhWSF-Tnw9ZkBGAaGfiS-w/exec';
+    const storage = window.localStorage;
+    const state = {
+      apiUrl: storage.getItem('lotusScannerApiUrl') || DEFAULT_API_URL,
+      password: storage.getItem('lotusScannerPassword') || '',
+      inventory: [],
+      selectedSku: '',
+      mode: 'receive',
+      batch: {},
+      reader: null,
+      controls: null,
+      lastCode: '',
+      lastScanAt: 0,
+      audioContext: null
+    };
+
+    const $ = selector => document.querySelector(selector);
+
+    $('#apiUrlInput').value = state.apiUrl;
+    $('#passwordInput').value = state.password;
+    $('#loadBtn').addEventListener('click', loadInventory);
+    $('#refreshBtn').addEventListener('click', loadInventory);
+    $('#receiveModeBtn').addEventListener('click', () => setMode('receive'));
+    $('#removeModeBtn').addEventListener('click', () => setMode('remove'));
+    $('#targetOnlyInput').addEventListener('change', renderResults);
+    $('#searchInput').addEventListener('input', renderResults);
+    $('#startBtn').addEventListener('click', startScanner);
+    $('#stopBtn').addEventListener('click', stopScanner);
+    $('#manualForm').addEventListener('submit', event => {
+      event.preventDefault();
+      const input = $('#manualInput');
+      handleCode(input.value);
+      input.value = '';
+      input.focus();
+    });
+    $('#submitBtn').addEventListener('click', submitBatch);
+    $('#clearBtn').addEventListener('click', clearBatch);
+    window.addEventListener('pagehide', stopScanner);
+
+    renderAll();
+
+    function setMode(mode) {
+      state.mode = mode;
+      $('#receiveModeBtn').classList.toggle('active', mode === 'receive');
+      $('#removeModeBtn').classList.toggle('active', mode === 'remove');
+      showScanNotice(`${mode === 'receive' ? 'Receive' : 'Remove'} mode selected.`);
+    }
+
+    async function loadInventory() {
+      state.apiUrl = $('#apiUrlInput').value.trim();
+      state.password = $('#passwordInput').value;
+      storage.setItem('lotusScannerApiUrl', state.apiUrl);
+      storage.setItem('lotusScannerPassword', state.password);
+
+      if (!state.apiUrl || !state.password) {
+        showSetupNotice('Enter the Apps Script URL and password.', true);
+        return;
+      }
+
+      showSetupNotice('Loading inventory...');
+      const response = await api('getInventory');
+      if (!response.success) {
+        showSetupNotice(response.message || 'Inventory could not load.', true);
+        return;
+      }
+
+      state.inventory = (response.inventory || []).map(rug => ({
+        ...rug,
+        SKU: String(rug.SKU || '').toUpperCase()
+      }));
+      showSetupNotice(`Loaded ${state.inventory.length} SKUs.`);
+      renderAll();
+    }
+
+    async function startScanner() {
+      if (!state.inventory.length) {
+        showScanNotice('Load inventory before scanning.', true);
+        return;
+      }
+      if (!window.ZXingBrowser || !ZXingBrowser.BrowserMultiFormatReader) {
+        showScanNotice('Scanner library did not load. Check internet connection and reload.', true);
+        return;
+      }
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        showScanNotice('This browser does not allow live camera scanning here. Use Safari/Chrome over HTTPS.', true);
+        return;
+      }
+
+      stopScanner();
+      primeAudio();
+
+      try {
+        state.reader = new ZXingBrowser.BrowserMultiFormatReader();
+        const video = $('#video');
+        const onResult = result => {
+          if (!result) return;
+          const code = typeof result.getText === 'function' ? result.getText() : String(result.text || result);
+          handleCode(code);
+        };
+        const constraints = {
+          audio: false,
+          video: {
+            facingMode: { ideal: 'environment' },
+            width: { ideal: 1280 },
+            height: { ideal: 720 }
+          }
+        };
+
+        if (typeof state.reader.decodeFromConstraints === 'function') {
+          state.controls = await state.reader.decodeFromConstraints(constraints, video, onResult);
+        } else {
+          state.controls = await state.reader.decodeFromVideoDevice(null, video, onResult);
+        }
+
+        $('#startBtn').disabled = true;
+        $('#stopBtn').disabled = false;
+        showScanNotice('Live scanner running.');
+      } catch (error) {
+        showScanNotice(cameraErrorMessage(error), true);
+      }
+    }
+
+    function stopScanner() {
+      if (state.controls && typeof state.controls.stop === 'function') state.controls.stop();
+      state.controls = null;
+      $('#startBtn').disabled = false;
+      $('#stopBtn').disabled = true;
+    }
+
+    function handleCode(rawCode) {
+      const code = cleanSku(rawCode);
+      const now = Date.now();
+      if (!code) return;
+      if (code === state.lastCode && now - state.lastScanAt < 900) return;
+      state.lastCode = code;
+      state.lastScanAt = now;
+
+      const rug = findRug(code);
+      if (!rug) {
+        vibrate([160, 80, 160]);
+        showScanNotice(`${code} is not in inventory. Count was not changed.`, true);
+        return;
+      }
+
+      if ($('#targetOnlyInput').checked && state.selectedSku && code !== state.selectedSku) {
+        vibrate([160, 80, 160]);
+        showScanNotice(`Scanned ${code}, but selected target is ${state.selectedSku}.`, true);
+        return;
+      }
+
+      const change = state.mode === 'remove' ? -1 : 1;
+      state.batch[code] = (Number(state.batch[code]) || 0) + change;
+      if (state.batch[code] === 0) delete state.batch[code];
+      state.selectedSku = code;
+      beep(change > 0 ? 880 : 440);
+      vibrate(80);
+      showScanNotice(`${change > 0 ? 'Received' : 'Removed'} 1: ${code}`);
+      renderAll();
+    }
+
+    async function submitBatch() {
+      const rows = Object.entries(state.batch)
+        .filter(([, quantityChange]) => quantityChange !== 0)
+        .map(([sku, quantityChange]) => ({ sku, quantityChange }));
+
+      if (!rows.length) return;
+      $('#submitBtn').disabled = true;
+      showSubmitNotice('Submitting batch...');
+
+      const response = await api('batchAdjustQuantity', {
+        rows: JSON.stringify(rows),
+        notes: $('#notesInput').value || 'Mobile live scanner batch'
+      });
+
+      if (!response.success) {
+        showSubmitNotice(response.message || 'Batch could not submit.', true);
+        renderPending();
+        return;
+      }
+
+      (response.rugs || []).forEach(updated => {
+        const index = state.inventory.findIndex(rug => rug.SKU === String(updated.SKU || '').toUpperCase());
+        if (index >= 0) state.inventory[index] = { ...updated, SKU: String(updated.SKU || '').toUpperCase() };
+      });
+      state.batch = {};
+      $('#notesInput').value = '';
+      showSubmitNotice(response.message || 'Batch submitted.');
+      renderAll();
+    }
+
+    function clearBatch() {
+      state.batch = {};
+      showSubmitNotice('Batch cleared.');
+      renderAll();
+    }
+
+    function renderAll() {
+      $('#loadedCount').textContent = state.inventory.length;
+      renderResults();
+      renderPending();
+      $('#headerStatus').textContent = state.inventory.length
+        ? `${state.inventory.length} SKUs ready. ${state.mode === 'receive' ? 'Receiving' : 'Removing'} mode.`
+        : 'Load inventory, choose Receive or Remove, then start scanning.';
+    }
+
+    function renderResults() {
+      const query = $('#searchInput').value.trim().toLowerCase();
+      const rows = state.inventory.filter(rug => {
+        if (!query) return true;
+        return [rug.SKU, rug.Name, rug.Design, rug.Size, rug.Color].some(value =>
+          String(value || '').toLowerCase().includes(query)
+        );
+      }).slice(0, 20);
+
+      if (!state.selectedSku && rows[0]) state.selectedSku = rows[0].SKU;
+      $('#resultList').innerHTML = rows.map(rug => `
+        <button class="result-item ${rug.SKU === state.selectedSku ? 'selected' : ''}" type="button" data-sku="${escapeAttr(rug.SKU)}">
+          <span class="sku">${escapeHtml(rug.SKU)}</span>
+          <span>${escapeHtml(rug.Name)} ${escapeHtml(rug.Design)} | ${escapeHtml(rug.Size)} | ${escapeHtml(rug.Color)}</span>
+          <span class="muted">Current quantity: ${Number(rug.Quantity || 0)}</span>
+        </button>
+      `).join('') || '<div class="muted">No matching SKUs.</div>';
+
+      document.querySelectorAll('[data-sku]').forEach(button => {
+        button.addEventListener('click', () => {
+          state.selectedSku = button.dataset.sku;
+          showScanNotice(`Selected ${state.selectedSku}.`);
+          renderResults();
+        });
+      });
+    }
+
+    function renderPending() {
+      const entries = Object.entries(state.batch).filter(([, change]) => change !== 0);
+      const pieceCount = entries.reduce((sum, [, change]) => sum + Math.abs(Number(change)), 0);
+      $('#pendingPieces').textContent = pieceCount;
+      $('#pendingSkus').textContent = entries.length;
+      $('#submitBtn').disabled = entries.length === 0;
+      $('#clearBtn').disabled = entries.length === 0;
+
+      $('#pendingList').innerHTML = entries.map(([sku, change]) => {
+        const rug = findRug(sku) || {};
+        return `
+          <div class="pending-row">
+            <div>
+              <div class="sku">${escapeHtml(sku)}</div>
+              <div>${escapeHtml(rug.Name || '')} ${escapeHtml(rug.Design || '')} | ${escapeHtml(rug.Size || '')} | ${escapeHtml(rug.Color || '')}</div>
+              <div class="muted">Current quantity: ${Number(rug.Quantity || 0)}</div>
+            </div>
+            <div>
+              <div class="pending-change ${change < 0 ? 'negative' : ''}">${change > 0 ? '+' : ''}${change}</div>
+              <div class="small-actions">
+                <button class="secondary" type="button" data-dec="${escapeAttr(sku)}">-</button>
+                <button class="secondary" type="button" data-inc="${escapeAttr(sku)}">+</button>
+              </div>
+            </div>
+          </div>
+        `;
+      }).join('') || '<div class="muted">No pending scans yet.</div>';
+
+      document.querySelectorAll('[data-inc]').forEach(button => {
+        button.addEventListener('click', () => adjustPending(button.dataset.inc, 1));
+      });
+      document.querySelectorAll('[data-dec]').forEach(button => {
+        button.addEventListener('click', () => adjustPending(button.dataset.dec, -1));
+      });
+    }
+
+    function adjustPending(sku, amount) {
+      state.batch[sku] = (Number(state.batch[sku]) || 0) + amount;
+      if (state.batch[sku] === 0) delete state.batch[sku];
+      renderPending();
+    }
+
+    function api(action, params = {}) {
+      return new Promise((resolve, reject) => {
+        const callbackName = `lotusScannerCallback${Date.now()}${Math.floor(Math.random() * 100000)}`;
+        const script = document.createElement('script');
+        const url = new URL(state.apiUrl);
+        url.searchParams.set('callback', callbackName);
+        url.searchParams.set('action', action);
+        url.searchParams.set('password', state.password);
+        Object.entries(params).forEach(([key, value]) => url.searchParams.set(key, value));
+
+        const timeout = window.setTimeout(() => {
+          cleanup();
+          reject(new Error('Request timed out.'));
+        }, 25000);
+
+        window[callbackName] = payload => {
+          cleanup();
+          resolve(payload);
+        };
+
+        script.onerror = () => {
+          cleanup();
+          reject(new Error('Could not reach Apps Script.'));
+        };
+        script.src = url.toString();
+        document.body.appendChild(script);
+
+        function cleanup() {
+          window.clearTimeout(timeout);
+          delete window[callbackName];
+          script.remove();
+        }
+      }).catch(error => ({ success: false, message: error.message || String(error) }));
+    }
+
+    function findRug(sku) {
+      const clean = cleanSku(sku);
+      return state.inventory.find(rug => rug.SKU === clean);
+    }
+
+    function cleanSku(value) {
+      return String(value || '').trim().toUpperCase();
+    }
+
+    function showSetupNotice(message, isError = false) {
+      showNotice('#setupNotice', message, isError);
+    }
+
+    function showScanNotice(message, isError = false) {
+      showNotice('#scanNotice', message, isError);
+    }
+
+    function showSubmitNotice(message, isError = false) {
+      showNotice('#submitNotice', message, isError);
+    }
+
+    function showNotice(selector, message, isError = false) {
+      const el = $(selector);
+      el.textContent = message || '';
+      el.className = `notice ${isError ? 'error' : ''}`;
+    }
+
+    function cameraErrorMessage(error) {
+      const name = error && error.name ? error.name : '';
+      const message = error && error.message ? error.message : String(error || '');
+      if (name === 'NotAllowedError' || /denied|not allowed|permission/i.test(message)) {
+        return 'Camera permission is blocked. Open this scanner from its HTTPS GitHub Pages link in Safari, then allow camera.';
+      }
+      if (name === 'NotFoundError' || /not found|no camera/i.test(message)) {
+        return 'No camera was found by this browser.';
+      }
+      if (name === 'NotReadableError' || /in use|could not start/i.test(message)) {
+        return 'Camera is already in use by another app or browser tab.';
+      }
+      return message || 'Camera could not start.';
+    }
+
+    function primeAudio() {
+      if (!state.audioContext) {
+        const Context = window.AudioContext || window.webkitAudioContext;
+        if (Context) state.audioContext = new Context();
+      }
+      if (state.audioContext && state.audioContext.state === 'suspended') state.audioContext.resume();
+    }
+
+    function beep(frequency) {
+      if (!state.audioContext) return;
+      const oscillator = state.audioContext.createOscillator();
+      const gain = state.audioContext.createGain();
+      oscillator.frequency.value = frequency;
+      oscillator.connect(gain);
+      gain.connect(state.audioContext.destination);
+      gain.gain.setValueAtTime(0.05, state.audioContext.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, state.audioContext.currentTime + 0.12);
+      oscillator.start();
+      oscillator.stop(state.audioContext.currentTime + 0.13);
+    }
+
+    function vibrate(pattern) {
+      if (navigator.vibrate) navigator.vibrate(pattern);
+    }
+
+    function escapeHtml(value) {
+      return String(value ?? '').replace(/[&<>"']/g, char => ({
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#039;'
+      }[char]));
+    }
+
+    function escapeAttr(value) {
+      return escapeHtml(value).replace(/`/g, '&#096;');
+    }
+  </script>
+</body>
+</html>
