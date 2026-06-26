@@ -3,7 +3,7 @@ const CONFIG = {
   TRANSACTIONS_SHEET: 'Transactions',
   INVENTORY_HEADERS: ['SKU', 'Name', 'Design', 'Size', 'Color', 'Quantity', 'BarcodeValue', 'CreatedAt', 'UpdatedAt'],
   TRANSACTION_HEADERS: ['Timestamp', 'Action', 'SKU', 'QuantityChange', 'PreviousQuantity', 'NewQuantity', 'Notes'],
-  PASSWORD: 'change-me-lotus'
+  PASSWORD: 'lotus'
 };
 
 function setupSheet() {
