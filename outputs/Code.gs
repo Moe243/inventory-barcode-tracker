@@ -64,6 +64,10 @@ function apiBatchAdjustQuantity(password, rows, notes) {
   return handleApiAction_('batchAdjustQuantity', password, { rows, notes });
 }
 
+function apiMigrateExistingSkusToShortFormat(password) {
+  return handleApiAction_('migrateExistingSkusToShortFormat', password, {});
+}
+
 function apiDeleteRug(password, sku) {
   return handleApiAction_('deleteRug', password, { sku });
 }
@@ -357,6 +361,69 @@ function importInventory(rows) {
   });
 }
 
+function migrateExistingSkusToShortFormat() {
+  return withLock_(() => {
+    setupSheetsQuietly_();
+    const sheet = getInventorySheet_();
+    if (!sheet || sheet.getLastRow() < 2) {
+      return { success: true, message: 'No inventory rows to migrate.', renamed: 0, updatedTransactions: 0 };
+    }
+
+    const now = new Date();
+    const rowCount = sheet.getLastRow() - 1;
+    const range = sheet.getRange(2, 1, rowCount, CONFIG.INVENTORY_HEADERS.length);
+    const values = range.getValues();
+    const usedSkus = new Set();
+    const skuMap = {};
+    let nextFallbackNumber = 1;
+    let renamed = 0;
+
+    const migratedRows = values.map(row => {
+      const rug = rowToObject_(CONFIG.INVENTORY_HEADERS, row);
+      const oldSku = String(rug.SKU || '').trim().toUpperCase();
+      const preferredNumber = parseRugNumber_(oldSku) || nextFallbackNumber;
+      const newSku = nextAvailableShortSku_(preferredNumber, usedSkus);
+      nextFallbackNumber = Math.max(nextFallbackNumber, parseRugNumber_(newSku) + 1);
+      usedSkus.add(newSku);
+
+      if (oldSku && oldSku !== newSku) {
+        skuMap[oldSku] = newSku;
+        renamed++;
+      }
+
+      const migrated = {
+        SKU: newSku,
+        Name: rug.Name,
+        Design: rug.Design,
+        Size: rug.Size,
+        Color: rug.Color,
+        Quantity: Number(rug.Quantity) || 0,
+        BarcodeValue: newSku,
+        CreatedAt: rug.CreatedAt,
+        UpdatedAt: oldSku !== newSku || String(rug.BarcodeValue || '').trim().toUpperCase() !== newSku ? now : rug.UpdatedAt
+      };
+      return inventoryObjectToRow_(migrated);
+    });
+
+    range.setValues(migratedRows);
+    const updatedTransactions = updateTransactionSkuReferences_(skuMap);
+
+    Object.keys(skuMap).forEach(oldSku => {
+      const newSku = skuMap[oldSku];
+      const migratedRow = migratedRows.find(row => String(row[0] || '').trim().toUpperCase() === newSku);
+      const quantity = migratedRow ? Number(migratedRow[5] || 0) : 0;
+      logTransaction_('SKU_MIGRATION', newSku, 0, quantity, quantity, `Old SKU: ${oldSku}`);
+    });
+
+    return {
+      success: true,
+      message: `SKU migration complete. Renamed ${renamed} rug${renamed === 1 ? '' : 's'} and updated ${updatedTransactions} transaction row${updatedTransactions === 1 ? '' : 's'}.`,
+      renamed,
+      updatedTransactions
+    };
+  });
+}
+
 function getTransactions(limit) {
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(CONFIG.TRANSACTIONS_SHEET);
   if (!sheet) {
@@ -514,13 +581,7 @@ function validateRug_(rug) {
 
 function generateNextSku_(sheet, rug) {
   const nextNumber = getNextRugNumber_(sheet);
-  return [
-    `RUG${nextNumber}`,
-    skuPart_(rug.Name),
-    skuPart_(rug.Design),
-    skuPart_(rug.Size),
-    skuPart_(rug.Color)
-  ].filter(Boolean).join('-');
+  return formatShortSku_(nextNumber);
 }
 
 function getNextRugNumber_(sheet) {
@@ -528,11 +589,31 @@ function getNextRugNumber_(sheet) {
 
   const values = sheet.getRange(2, 1, sheet.getLastRow() - 1, 1).getValues().flat();
   const maxNumber = values.reduce((max, sku) => {
-    const match = String(sku || '').match(/^RUG-?(\d+)/i);
-    return match ? Math.max(max, Number(match[1])) : max;
+    const rugNumber = parseRugNumber_(sku);
+    return rugNumber ? Math.max(max, rugNumber) : max;
   }, 0);
 
   return maxNumber + 1;
+}
+
+function formatShortSku_(number) {
+  const cleanNumber = Math.max(1, Math.floor(Number(number) || 1));
+  return `RUG-${String(cleanNumber).padStart(4, '0')}`;
+}
+
+function parseRugNumber_(sku) {
+  const match = String(sku || '').trim().match(/^RUG-?(\d+)/i);
+  return match ? Number(match[1]) : 0;
+}
+
+function nextAvailableShortSku_(preferredNumber, usedSkus) {
+  let candidateNumber = Math.max(1, Math.floor(Number(preferredNumber) || 1));
+  let candidateSku = formatShortSku_(candidateNumber);
+  while (usedSkus.has(candidateSku)) {
+    candidateNumber++;
+    candidateSku = formatShortSku_(candidateNumber);
+  }
+  return candidateSku;
 }
 
 function skuPart_(value) {
@@ -542,6 +623,31 @@ function skuPart_(value) {
     .replace(/[^A-Z0-9]+/g, '-')
     .replace(/-+/g, '-')
     .replace(/^-|-$/g, '');
+}
+
+function updateTransactionSkuReferences_(skuMap) {
+  const oldSkus = Object.keys(skuMap || {});
+  if (!oldSkus.length) return 0;
+
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(CONFIG.TRANSACTIONS_SHEET);
+  if (!sheet || sheet.getLastRow() < 2) return 0;
+
+  const rowCount = sheet.getLastRow() - 1;
+  const range = sheet.getRange(2, 1, rowCount, CONFIG.TRANSACTION_HEADERS.length);
+  const values = range.getValues();
+  const skuColumnIndex = CONFIG.TRANSACTION_HEADERS.indexOf('SKU');
+  let updated = 0;
+
+  values.forEach(row => {
+    const oldSku = String(row[skuColumnIndex] || '').trim().toUpperCase();
+    if (skuMap[oldSku]) {
+      row[skuColumnIndex] = skuMap[oldSku];
+      updated++;
+    }
+  });
+
+  if (updated) range.setValues(values);
+  return updated;
 }
 
 function identityKey_(rug) {
@@ -607,6 +713,8 @@ function handleApiAction_(action, password, body) {
         return adjustQuantity(body.sku, Number(body.quantityChange), body.notes || '');
       case 'batchAdjustQuantity':
         return batchAdjustQuantity(body.rows || [], body.notes || '');
+      case 'migrateExistingSkusToShortFormat':
+        return migrateExistingSkusToShortFormat();
       case 'deleteRug':
         return deleteRug(body.sku);
       case 'importInventory':

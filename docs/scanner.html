@@ -383,7 +383,7 @@
     <section>
       <div class="mode">
         <button id="receiveModeBtn" class="active receive" type="button">Receive</button>
-        <button id="removeModeBtn" type="button">Remove</button>
+        <button id="removeModeBtn" class="remove" type="button">Remove</button>
       </div>
 
       <div class="stats">
@@ -585,14 +585,14 @@
       const rug = findRug(code);
       if (!rug) {
         vibrate([160, 80, 160]);
-        showScanFeedback('Not Found', code, true);
+        showScanFeedback('Not Found', code, 'error');
         showScanNotice(`${code} is not in inventory. Count was not changed.`, true);
         return;
       }
 
       if ($('#targetOnlyInput').checked && state.selectedSku && code !== state.selectedSku) {
         vibrate([160, 80, 160]);
-        showScanFeedback('Wrong SKU', code, true);
+        showScanFeedback('Wrong SKU', code, 'error');
         showScanNotice(`Scanned ${code}, but selected target is ${state.selectedSku}.`, true);
         return;
       }
@@ -603,16 +603,17 @@
       state.selectedSku = code;
       beep(change > 0 ? 880 : 440);
       vibrate(80);
-      showScanFeedback(change > 0 ? 'Received +1' : 'Removed -1', code, false);
+      showScanFeedback(change > 0 ? 'Received +1' : 'Removed -1', code, change > 0 ? 'success' : 'remove');
       showScanNotice(`${change > 0 ? 'Received' : 'Removed'} 1: ${code}`);
       renderAll();
     }
 
-    function showScanFeedback(title, sku, isError) {
+    function showScanFeedback(title, sku, tone) {
+      const isRed = tone === 'error' || tone === 'remove';
       const flash = $('#scanFlash');
       $('#scanFlashTitle').textContent = title;
       $('#scanFlashSku').textContent = sku;
-      flash.classList.toggle('error', Boolean(isError));
+      flash.classList.toggle('error', isRed);
       flash.classList.add('show');
       window.clearTimeout(state.flashTimer);
       state.flashTimer = window.setTimeout(() => flash.classList.remove('show'), 650);
@@ -620,8 +621,8 @@
       const card = $('#scanStatusCard');
       $('#scanStatusTitle').textContent = title;
       $('#scanStatusDetail').textContent = sku;
-      card.classList.toggle('success', !isError);
-      card.classList.toggle('error', Boolean(isError));
+      card.classList.toggle('success', tone === 'success');
+      card.classList.toggle('error', isRed);
     }
 
     async function submitBatch() {

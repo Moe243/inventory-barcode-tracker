@@ -45,6 +45,8 @@ The main Apps Script app can stay as your dashboard. The live warehouse scanner 
 11. Choose `Receive` or `Remove`.
 12. Tap `Start live scanner` and allow camera permission.
 
+If you are upgrading from the older long SKU format, run `migrateExistingSkusToShortFormat` once from Apps Script after deploying the updated `Code.gs`, then reprint barcode labels.
+
 The scanner page works in warehouse batch mode:
 
 - Scan any known rug SKU.
@@ -83,16 +85,16 @@ CSV imports should use these headers:
 
 ```csv
 sku,name,design,size,color,quantity
-RUG1-DIAMOND-2010-8X10-TURQUOISE,Diamond,2010,8x10,Turquoise,2
-RUG2-SOFIA-187-5X8-BLUE,Sofia,187,5x8,Blue,1
+RUG-0001,Diamond,2010,8x10,Turquoise,2
+RUG-0002,Sofia,187,5x8,Blue,1
 ```
 
-Blank SKUs are allowed during import. The backend generates readable SKUs like `RUG1-DIAMOND-2010-8X10-TURQUOISE`.
+Blank SKUs are allowed during import. The backend generates short camera-friendly SKUs like `RUG-0001`.
 
 ## Barcode Receiving Workflow
 
 1. Add a rug with name, design, size, and color.
-2. Leave SKU blank so the app creates the next readable SKU.
+2. Leave SKU blank so the app creates the next short SKU.
 3. Keep starting quantity at `0` if you plan to receive stock by scanning.
 4. Open `Barcodes`, select the SKUs you want, set label counts, and print.
 5. Open `Scan / Count`, search/select the target SKU, choose `Receive` or `Remove`, and start the camera scanner on a phone or tablet.
@@ -130,3 +132,4 @@ That means anyone who has the deployed web app link and password can access the 
 - The Add Rug form has buttons for adding another rug with the same name/design or starting a new rug.
 - The app prevents duplicate `Name + Design + Size + Color` rows.
 - CSV import updates existing SKUs and adds new SKUs.
+- Barcode labels encode the short SKU and print name, design, size, and color under the barcode.

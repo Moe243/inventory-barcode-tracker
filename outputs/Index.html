@@ -430,6 +430,12 @@
       color: #374151;
     }
 
+    .label-detail {
+      display: grid;
+      gap: 2px;
+      line-height: 1.2;
+    }
+
     .modal {
       position: fixed;
       inset: 0;
@@ -1138,8 +1144,11 @@
         <div class="label">
           <strong>${escapeHtml(item.rug.SKU)}</strong>
           <svg id="barcode-${index}"></svg>
-          <span>${escapeHtml(item.rug.Name)}</span>
-          <span>${escapeHtml(item.rug.Design)} | ${escapeHtml(item.rug.Size)} | ${escapeHtml(item.rug.Color)}</span>
+          <span class="label-detail">
+            <span>Name: ${escapeHtml(item.rug.Name)}</span>
+            <span>Design: ${escapeHtml(item.rug.Design)}</span>
+            <span>Size: ${escapeHtml(item.rug.Size)} | Color: ${escapeHtml(item.rug.Color)}</span>
+          </span>
         </div>
       `).join('');
 
