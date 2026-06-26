@@ -404,6 +404,7 @@
       border-radius: 4px;
       padding: 10px;
       text-align: center;
+      overflow: hidden;
       min-height: 150px;
       display: grid;
       align-content: center;
@@ -413,6 +414,15 @@
 
     .label strong {
       font-size: 14px;
+      overflow-wrap: anywhere;
+    }
+
+    .label svg {
+      display: block;
+      width: 100%;
+      max-width: 100%;
+      height: auto;
+      max-height: 54px;
     }
 
     .label span {
@@ -1134,12 +1144,13 @@
       `).join('');
 
       labels.forEach((item, index) => {
-        JsBarcode(`#barcode-${index}`, item.rug.BarcodeValue || item.rug.SKU, {
+        const barcodeValue = item.rug.BarcodeValue || item.rug.SKU;
+        JsBarcode(`#barcode-${index}`, barcodeValue, {
           format: 'CODE128',
-          width: 1.6,
-          height: 44,
+          width: barcodeValue.length > 28 ? 1.05 : 1.25,
+          height: 42,
           displayValue: false,
-          margin: 4
+          margin: 2
         });
       });
     }

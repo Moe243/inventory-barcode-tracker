@@ -196,6 +196,7 @@
     }
 
     .camera {
+      position: relative;
       background: #0f172a;
       border-radius: 8px;
       overflow: hidden;
@@ -209,6 +210,70 @@
       max-height: 52vh;
       object-fit: cover;
       background: #0f172a;
+    }
+
+    .scan-flash {
+      position: absolute;
+      inset: 0;
+      display: grid;
+      place-items: center;
+      padding: 18px;
+      color: #fff;
+      text-align: center;
+      background: rgba(8, 127, 91, .9);
+      opacity: 0;
+      pointer-events: none;
+      transform: scale(.98);
+      transition: opacity .16s ease, transform .16s ease;
+    }
+
+    .scan-flash.show {
+      opacity: 1;
+      transform: scale(1);
+    }
+
+    .scan-flash.error {
+      background: rgba(180, 35, 24, .92);
+    }
+
+    .scan-flash strong {
+      display: block;
+      font-size: 30px;
+      line-height: 1.05;
+      margin-bottom: 8px;
+    }
+
+    .scan-flash span {
+      display: block;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 14px;
+      font-weight: 800;
+      word-break: break-word;
+    }
+
+    .scan-status-card {
+      border: 2px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+      padding: 12px;
+      display: grid;
+      gap: 4px;
+      min-height: 72px;
+    }
+
+    .scan-status-card.success {
+      border-color: var(--accent);
+      background: #ecfdf5;
+    }
+
+    .scan-status-card.error {
+      border-color: var(--warn);
+      background: #fef3f2;
+    }
+
+    .scan-status-card strong {
+      font-size: 22px;
+      line-height: 1.1;
     }
 
     .target-toggle {
@@ -341,6 +406,16 @@
     <section>
       <div class="camera">
         <video id="video" muted playsinline></video>
+        <div id="scanFlash" class="scan-flash">
+          <div>
+            <strong id="scanFlashTitle">Counted</strong>
+            <span id="scanFlashSku"></span>
+          </div>
+        </div>
+      </div>
+      <div id="scanStatusCard" class="scan-status-card">
+        <strong id="scanStatusTitle">Ready to scan</strong>
+        <span id="scanStatusDetail" class="muted">Successful scans will flash green here.</span>
       </div>
       <div class="toolbar">
         <button id="startBtn" type="button">Start live scanner</button>
@@ -382,6 +457,7 @@
       controls: null,
       lastCode: '',
       lastScanAt: 0,
+      flashTimer: null,
       audioContext: null
     };
 
@@ -509,12 +585,14 @@
       const rug = findRug(code);
       if (!rug) {
         vibrate([160, 80, 160]);
+        showScanFeedback('Not Found', code, true);
         showScanNotice(`${code} is not in inventory. Count was not changed.`, true);
         return;
       }
 
       if ($('#targetOnlyInput').checked && state.selectedSku && code !== state.selectedSku) {
         vibrate([160, 80, 160]);
+        showScanFeedback('Wrong SKU', code, true);
         showScanNotice(`Scanned ${code}, but selected target is ${state.selectedSku}.`, true);
         return;
       }
@@ -525,8 +603,25 @@
       state.selectedSku = code;
       beep(change > 0 ? 880 : 440);
       vibrate(80);
+      showScanFeedback(change > 0 ? 'Received +1' : 'Removed -1', code, false);
       showScanNotice(`${change > 0 ? 'Received' : 'Removed'} 1: ${code}`);
       renderAll();
+    }
+
+    function showScanFeedback(title, sku, isError) {
+      const flash = $('#scanFlash');
+      $('#scanFlashTitle').textContent = title;
+      $('#scanFlashSku').textContent = sku;
+      flash.classList.toggle('error', Boolean(isError));
+      flash.classList.add('show');
+      window.clearTimeout(state.flashTimer);
+      state.flashTimer = window.setTimeout(() => flash.classList.remove('show'), 650);
+
+      const card = $('#scanStatusCard');
+      $('#scanStatusTitle').textContent = title;
+      $('#scanStatusDetail').textContent = sku;
+      card.classList.toggle('success', !isError);
+      card.classList.toggle('error', Boolean(isError));
     }
 
     async function submitBatch() {
