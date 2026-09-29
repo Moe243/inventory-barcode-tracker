@@ -448,7 +448,7 @@
     const storage = window.localStorage;
     const state = {
       apiUrl: storage.getItem('lotusScannerApiUrl') || DEFAULT_API_URL,
-      password: storage.getItem('lotusScannerPassword') || '',
+      password: '',
       inventory: [],
       selectedSku: '',
       mode: 'receive',
@@ -497,7 +497,6 @@
       state.apiUrl = $('#apiUrlInput').value.trim();
       state.password = $('#passwordInput').value;
       storage.setItem('lotusScannerApiUrl', state.apiUrl);
-      storage.setItem('lotusScannerPassword', state.password);
 
       if (!state.apiUrl || !state.password) {
         showSetupNotice('Enter the Apps Script URL and password.', true);
