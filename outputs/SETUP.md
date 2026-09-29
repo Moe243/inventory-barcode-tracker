@@ -15,7 +15,7 @@ This project uses Google Sheets as the inventory database and Google Apps Script
 3. Replace the default Apps Script code with the contents of `Code.gs`.
 4. Create a new HTML file named `Index.html`.
 5. Paste the contents of `Index.html` into that file.
-6. In Apps Script, open **Project Settings > Script Properties** and add `APP_PASSWORD` with a new, strong password. Do not put the password in source code. The app rejects requests when this property is missing.
+6. This version is public and does not use `APP_PASSWORD`. Remove the old script property if present.
 7. In Apps Script, select `setupSheet` from the function dropdown and click `Run`.
 8. Approve the Google permissions.
 9. Deploy the app:
@@ -39,10 +39,9 @@ The main Apps Script app can stay as your dashboard. The live warehouse scanner 
 6. Set branch to `main` and folder to `/docs`.
 7. Save.
 8. Open the GitHub Pages scanner URL on your iPhone.
-9. Open the shared scanner link and enter the app password. The scanner is configured for the warehouse deployment URL in `docs/scanner.html`; workers do not enter an Apps Script URL. A successful sign-in lasts for the current browser tab session, and inventory loads automatically if that tab is reloaded.
-10. Tap `Load inventory`.
-11. Choose `Receive` or `Remove`.
-12. Tap `Start live scanner` and allow camera permission.
+9. Open the shared scanner link. The scanner is configured for the warehouse deployment URL in `docs/scanner.html` and loads inventory automatically.
+10. Choose `Receive` or `Remove`.
+11. Tap `Start live scanner` and allow camera permission.
 
 If you are upgrading from the older long SKU format, run `migrateExistingSkusToShortFormat` once from Apps Script after deploying the updated `Code.gs`, then reprint barcode labels.
 
@@ -131,7 +130,7 @@ The easiest deployment is:
 - `Execute as: Me`
 - `Who has access: Anyone with the link`
 
-That means anyone who has the deployed web app link and password can access the app. The separate scanner uses JSONP, which sends the password in the request URL. Browser history, network logs, and other places may retain that URL. Treat this as a temporary internal pilot only; do not use shared passwords or the public scanner for a permanent warehouse rollout. Replace the cross-site JSONP scanner with an authenticated same-origin app before broad deployment. Rotate the old `lotus` password after updating the deployment.
+This version has no password. Anyone with the dashboard or scanner URL can read inventory and submit changes; the public Apps Script endpoint also exposes add, import, correction, deletion, and SKU migration actions. Keep real inventory out of this deployment until access control is restored. The Google Sheet itself can remain unshared; the deployed script runs with the deployer's permissions.
 
 ## Practical Notes
 
