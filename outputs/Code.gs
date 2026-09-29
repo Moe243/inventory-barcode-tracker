@@ -135,6 +135,7 @@ function addOrUpdateRug(rug) {
       const previousQuantity = Number(existing.Quantity) || 0;
       const incomingQuantity = Number(clean.Quantity) || 0;
       const newQuantity = mode === 'replace' ? incomingQuantity : previousQuantity + incomingQuantity;
+      if (!Number.isSafeInteger(newQuantity) || newQuantity < 0) throw new Error('Quantity would be invalid.');
 
       const updated = {
         SKU: existing.SKU,
@@ -202,8 +203,11 @@ function updateRug(rug) {
       UpdatedAt: new Date()
     };
 
-    if (Number.isNaN(updated.Quantity) || updated.Quantity < 0) throw new Error('Quantity must be zero or more.');
+    if (!Number.isSafeInteger(updated.Quantity) || updated.Quantity < 0) throw new Error('Quantity must be a whole number of zero or more.');
     writeInventoryRow_(sheet, rowNumber, updated);
+    if (updated.Quantity !== Number(existing.Quantity)) {
+      logTransaction_('CORRECTION', clean.SKU, updated.Quantity - Number(existing.Quantity), Number(existing.Quantity), updated.Quantity, rug.notes || 'Admin quantity correction');
+    }
     return { success: true, message: 'Rug details saved.', sku: clean.SKU, rug: serializeRug_(updated) };
   });
 }
@@ -213,7 +217,7 @@ function adjustQuantity(sku, quantityChange, notes) {
     setupSheetsQuietly_();
     const cleanSku = String(sku || '').trim().toUpperCase();
     if (!cleanSku) throw new Error('SKU is required.');
-    if (!Number.isFinite(quantityChange) || quantityChange === 0) throw new Error('Quantity change must not be zero.');
+    if (!Number.isSafeInteger(quantityChange) || quantityChange === 0) throw new Error('Quantity change must be a nonzero whole number.');
 
     const sheet = getInventorySheet_();
     const rowNumber = findRowBySku_(sheet, cleanSku);
@@ -222,7 +226,7 @@ function adjustQuantity(sku, quantityChange, notes) {
     const existing = getRugByRow_(sheet, rowNumber);
     const previousQuantity = Number(existing.Quantity) || 0;
     const newQuantity = previousQuantity + quantityChange;
-    if (newQuantity < 0) throw new Error('Quantity cannot go below zero.');
+    if (!Number.isSafeInteger(newQuantity) || newQuantity < 0) throw new Error('Quantity would be invalid.');
 
     existing.Quantity = newQuantity;
     existing.UpdatedAt = new Date();
@@ -582,7 +586,7 @@ function validateRug_(rug) {
   if (!rug.Design) throw new Error('Design is required.');
   if (!rug.Size) throw new Error('Size is required.');
   if (!rug.Color) throw new Error('Color is required.');
-  if (!Number.isFinite(rug.Quantity) || rug.Quantity < 0) throw new Error('Quantity must be zero or more.');
+  if (!Number.isSafeInteger(rug.Quantity) || rug.Quantity < 0) throw new Error('Quantity must be a whole number of zero or more.');
 }
 
 function generateNextSku_(sheet, rug) {
