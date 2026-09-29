@@ -15,8 +15,7 @@ This project uses Google Sheets as the inventory database and Google Apps Script
 3. Replace the default Apps Script code with the contents of `Code.gs`.
 4. Create a new HTML file named `Index.html`.
 5. Paste the contents of `Index.html` into that file.
-6. In `Code.gs`, change the temporary password value `change-me-lotus` to your own password:
-   - `CONFIG.PASSWORD`
+6. In Apps Script, open **Project Settings > Script Properties** and add `APP_PASSWORD` with a new, strong password. Do not put the password in source code. The app rejects requests when this property is missing.
 7. In Apps Script, select `setupSheet` from the function dropdown and click `Run`.
 8. Approve the Google permissions.
 9. Deploy the app:
@@ -40,7 +39,7 @@ The main Apps Script app can stay as your dashboard. The live warehouse scanner 
 6. Set branch to `main` and folder to `/docs`.
 7. Save.
 8. Open the GitHub Pages scanner URL on your iPhone.
-9. Enter the Apps Script `/exec` URL and app password.
+9. Enter the Apps Script `/exec` URL and app password. The scanner remembers the URL, but you must enter the password again after reopening the page.
 10. Tap `Load inventory`.
 11. Choose `Receive` or `Remove`.
 12. Tap `Start live scanner` and allow camera permission.
@@ -120,7 +119,7 @@ The easiest deployment is:
 - `Execute as: Me`
 - `Who has access: Anyone with the link`
 
-That means anyone who has the deployed web app link and password can access the app. The included password screen checks the password on the Apps Script backend, but it is still basic protection only, not enterprise security. For stronger security, deploy access only to specific Google accounts in your organization.
+That means anyone who has the deployed web app link and password can access the app. The separate scanner uses JSONP, which sends the password in the request URL. Browser history, network logs, and other places may retain that URL. Treat this as a temporary internal pilot only; do not use shared passwords or the public scanner for a permanent warehouse rollout. Replace the cross-site JSONP scanner with an authenticated same-origin app before broad deployment. Rotate the old `lotus` password after updating the deployment.
 
 ## Practical Notes
 
