@@ -34,9 +34,7 @@ function doPost(e) {
 }
 
 function validatePassword(password) {
-  return isPasswordValid_(password)
-    ? { success: true, message: 'Password accepted.' }
-    : { success: false, message: 'Wrong password.' };
+  return { success: true, message: 'Inventory is public.' };
 }
 
 function apiGetInventory(password) {
@@ -704,16 +702,7 @@ function withLock_(callback) {
   }
 }
 
-function isPasswordValid_(password) {
-  const configuredPassword = PropertiesService.getScriptProperties().getProperty('APP_PASSWORD');
-  return !!configuredPassword && String(password || '') === configuredPassword;
-}
-
 function handleApiAction_(action, password, body) {
-  if (!isPasswordValid_(password)) {
-    return { success: false, message: 'Invalid password.' };
-  }
-
   try {
     switch (action) {
       case 'getInventory':
