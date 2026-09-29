@@ -439,14 +439,17 @@ function getTransactions(limit) {
   if (!sheet) {
     return { success: true, message: 'Transactions loaded.', transactions: [] };
   }
-  const values = sheet.getDataRange().getValues();
-  if (values.length <= 1) {
+  const lastRow = sheet.getLastRow();
+  if (lastRow <= 1) {
     return { success: true, message: 'Transactions loaded.', transactions: [] };
   }
 
-  const headers = values[0];
-  const maxRows = Math.max(1, Number(limit || 75));
-  const transactions = values.slice(1)
+  const columnCount = CONFIG.TRANSACTION_HEADERS.length;
+  const headers = sheet.getRange(1, 1, 1, columnCount).getValues()[0];
+  const maxRows = Math.min(500, Math.max(1, Math.floor(Number(limit) || 75)));
+  const firstRow = Math.max(2, lastRow - maxRows + 1);
+  const values = sheet.getRange(firstRow, 1, lastRow - firstRow + 1, columnCount).getValues();
+  const transactions = values
     .filter(row => row.some(cell => String(cell || '').trim()))
     .slice(-maxRows)
     .map(row => rowToObject_(headers, row))
@@ -478,12 +481,13 @@ function ensureSheet_(ss, name, headers) {
     return sheet;
   }
 
-  const values = sheet.getRange(1, 1, lastRow, lastColumn).getValues();
-  const currentHeaders = values[0].map(header => String(header || '').trim());
+  const currentHeaders = sheet.getRange(1, 1, 1, lastColumn).getValues()[0]
+    .map(header => String(header || '').trim());
   const hasHeaders = headers.length === currentHeaders.filter(Boolean).length &&
     headers.every((header, index) => currentHeaders[index] === header);
 
   if (!hasHeaders) {
+    const values = sheet.getRange(1, 1, lastRow, lastColumn).getValues();
     const headerIndex = currentHeaders.reduce((index, header, columnIndex) => {
       if (header) index[header] = columnIndex;
       return index;
@@ -503,8 +507,8 @@ function ensureSheet_(ss, name, headers) {
       sheet.getRange(2, 1, remappedRows.length, headers.length).setValues(remappedRows);
     }
     sheet.setFrozenRows(1);
+    sheet.autoResizeColumns(1, headers.length);
   }
-  sheet.autoResizeColumns(1, headers.length);
   return sheet;
 }
 
