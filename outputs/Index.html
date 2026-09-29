@@ -529,19 +529,7 @@
   </style>
 </head>
 <body>
-  <div id="auth" class="auth">
-    <h1>Lotus Rugs</h1>
-    <p>Warehouse inventory access</p>
-    <form id="loginForm">
-      <label>Password
-        <input id="passwordInput" type="password" autocomplete="current-password" required>
-      </label>
-      <div id="authNotice" class="notice"></div>
-      <button type="submit">Open inventory</button>
-    </form>
-  </div>
-
-  <div id="app" class="app" hidden>
+  <div id="app" class="app">
     <header class="topbar">
       <div class="brand">
         <h1>Lotus Rugs Inventory</h1>
@@ -846,23 +834,7 @@
     const $ = selector => document.querySelector(selector);
     const $$ = selector => Array.from(document.querySelectorAll(selector));
 
-    $('#loginForm').addEventListener('submit', async event => {
-      event.preventDefault();
-      const password = $('#passwordInput').value;
-      state.password = password;
-
-      const response = await api('validatePassword');
-      if (!response.success) {
-        state.password = '';
-        showAuthNotice(response.message || 'Wrong password.', true);
-        return;
-      }
-
-      showAuthNotice('');
-      $('#auth').hidden = true;
-      $('#app').hidden = false;
-      await loadAll();
-    });
+    loadAll();
 
     $$('.tab').forEach(button => {
       button.addEventListener('click', () => switchTab(button.dataset.tab));
@@ -1620,12 +1592,6 @@
       const notice = $('#notice');
       notice.textContent = message || '';
       notice.className = `notice ${isError ? 'error' : message ? 'success' : ''}`;
-    }
-
-    function showAuthNotice(message, isError = false) {
-      const notice = $('#authNotice');
-      notice.textContent = message || '';
-      notice.className = `notice ${isError ? 'error' : ''}`;
     }
 
     function escapeHtml(value) {
