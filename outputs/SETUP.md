@@ -15,8 +15,7 @@ This project uses Google Sheets as the inventory database and Google Apps Script
 3. Replace the default Apps Script code with the contents of `Code.gs`.
 4. Create a new HTML file named `Index.html`.
 5. Paste the contents of `Index.html` into that file.
-6. In `Code.gs`, change the temporary password value `change-me-lotus` to your own password:
-   - `CONFIG.PASSWORD`
+6. This version is public and does not use `APP_PASSWORD`. Remove the old script property if present.
 7. In Apps Script, select `setupSheet` from the function dropdown and click `Run`.
 8. Approve the Google permissions.
 9. Deploy the app:
@@ -40,10 +39,9 @@ The main Apps Script app can stay as your dashboard. The live warehouse scanner 
 6. Set branch to `main` and folder to `/docs`.
 7. Save.
 8. Open the GitHub Pages scanner URL on your iPhone.
-9. Enter the Apps Script `/exec` URL and app password.
-10. Tap `Load inventory`.
-11. Choose `Receive` or `Remove`.
-12. Tap `Start live scanner` and allow camera permission.
+9. Open the shared scanner link. The scanner is configured for the warehouse deployment URL in `docs/scanner.html` and loads inventory automatically.
+10. Choose `Receive` or `Remove`.
+11. Tap `Start live scanner` and allow camera permission.
 
 If you are upgrading from the older long SKU format, run `migrateExistingSkusToShortFormat` once from Apps Script after deploying the updated `Code.gs`, then reprint barcode labels.
 
@@ -111,6 +109,18 @@ Blank SKUs are allowed during import. The backend generates short camera-friendl
 6. Review the pending batch.
 7. Submit the batch once when finished.
 
+## One-Warehouse Pilot
+
+This app tracks **one quantity per SKU in one warehouse**. A barcode identifies a SKU, not a particular physical rug. Do not print a different SKU for every copy of the same item, and do not treat a scan as a location update.
+
+1. Make a copy of the production Google Sheet and connect a separate Apps Script test deployment to that copy. Keep the production Sheet and web app in use during testing.
+2. Select 20–50 SKUs in one physical area. Check that each printed barcode resolves to the intended style, size, and color. Record the physical starting count for each SKU.
+3. Use **Receive** for actual stock arriving and **Remove** for stock leaving. Review the SKU counts and notes before pressing **Submit batch**. A physical count alone must not be entered as a receive or removal; compare it with the recorded count first and enter only the difference as a documented correction.
+4. Test a mixed batch, repeated scans of the same SKU, an unknown barcode, and removal greater than stock. A failed batch must leave all quantities unchanged.
+5. After each test submission, check both Inventory and Transactions in the Sheet against the physical count. Repeat from two devices at the same time.
+6. If the phone reports a timeout or loses connection after Submit, check the Transactions sheet and current quantity before trying again. The current API does not yet give retries a unique batch ID.
+7. When the pilot agrees with the physical count, train staff on the same steps and expand SKU by SKU. Keep one manager responsible for corrections and daily discrepancy review.
+
 ## Security Notes
 
 This setup is intended for internal warehouse use.
@@ -120,7 +130,7 @@ The easiest deployment is:
 - `Execute as: Me`
 - `Who has access: Anyone with the link`
 
-That means anyone who has the deployed web app link and password can access the app. The included password screen checks the password on the Apps Script backend, but it is still basic protection only, not enterprise security. For stronger security, deploy access only to specific Google accounts in your organization.
+This version has no password. Anyone with the dashboard or scanner URL can read inventory and submit changes; the public Apps Script endpoint also exposes add, import, correction, deletion, and SKU migration actions. Keep real inventory out of this deployment until access control is restored. The Google Sheet itself can remain unshared; the deployed script runs with the deployer's permissions.
 
 ## Practical Notes
 

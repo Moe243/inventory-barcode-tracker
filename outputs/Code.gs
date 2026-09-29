@@ -2,8 +2,7 @@ const CONFIG = {
   INVENTORY_SHEET: 'Inventory',
   TRANSACTIONS_SHEET: 'Transactions',
   INVENTORY_HEADERS: ['SKU', 'Name', 'Design', 'Size', 'Color', 'Quantity', 'BarcodeValue', 'CreatedAt', 'UpdatedAt'],
-  TRANSACTION_HEADERS: ['Timestamp', 'Action', 'SKU', 'QuantityChange', 'PreviousQuantity', 'NewQuantity', 'Notes'],
-  PASSWORD: 'lotus'
+  TRANSACTION_HEADERS: ['Timestamp', 'Action', 'SKU', 'QuantityChange', 'PreviousQuantity', 'NewQuantity', 'Notes']
 };
 
 function setupSheet() {
@@ -35,9 +34,7 @@ function doPost(e) {
 }
 
 function validatePassword(password) {
-  return isPasswordValid_(password)
-    ? { success: true, message: 'Password accepted.' }
-    : { success: false, message: 'Wrong password.' };
+  return { success: true, message: 'Inventory is public.' };
 }
 
 function apiGetInventory(password) {
@@ -136,6 +133,7 @@ function addOrUpdateRug(rug) {
       const previousQuantity = Number(existing.Quantity) || 0;
       const incomingQuantity = Number(clean.Quantity) || 0;
       const newQuantity = mode === 'replace' ? incomingQuantity : previousQuantity + incomingQuantity;
+      if (!Number.isSafeInteger(newQuantity) || newQuantity < 0) throw new Error('Quantity would be invalid.');
 
       const updated = {
         SKU: existing.SKU,
@@ -203,8 +201,11 @@ function updateRug(rug) {
       UpdatedAt: new Date()
     };
 
-    if (Number.isNaN(updated.Quantity) || updated.Quantity < 0) throw new Error('Quantity must be zero or more.');
+    if (!Number.isSafeInteger(updated.Quantity) || updated.Quantity < 0) throw new Error('Quantity must be a whole number of zero or more.');
     writeInventoryRow_(sheet, rowNumber, updated);
+    if (updated.Quantity !== Number(existing.Quantity)) {
+      logTransaction_('CORRECTION', clean.SKU, updated.Quantity - Number(existing.Quantity), Number(existing.Quantity), updated.Quantity, rug.notes || 'Admin quantity correction');
+    }
     return { success: true, message: 'Rug details saved.', sku: clean.SKU, rug: serializeRug_(updated) };
   });
 }
@@ -214,7 +215,7 @@ function adjustQuantity(sku, quantityChange, notes) {
     setupSheetsQuietly_();
     const cleanSku = String(sku || '').trim().toUpperCase();
     if (!cleanSku) throw new Error('SKU is required.');
-    if (!Number.isFinite(quantityChange) || quantityChange === 0) throw new Error('Quantity change must not be zero.');
+    if (!Number.isSafeInteger(quantityChange) || quantityChange === 0) throw new Error('Quantity change must be a nonzero whole number.');
 
     const sheet = getInventorySheet_();
     const rowNumber = findRowBySku_(sheet, cleanSku);
@@ -223,7 +224,7 @@ function adjustQuantity(sku, quantityChange, notes) {
     const existing = getRugByRow_(sheet, rowNumber);
     const previousQuantity = Number(existing.Quantity) || 0;
     const newQuantity = previousQuantity + quantityChange;
-    if (newQuantity < 0) throw new Error('Quantity cannot go below zero.');
+    if (!Number.isSafeInteger(newQuantity) || newQuantity < 0) throw new Error('Quantity would be invalid.');
 
     existing.Quantity = newQuantity;
     existing.UpdatedAt = new Date();
@@ -241,20 +242,27 @@ function batchAdjustQuantity(rows, notes) {
     if (!Array.isArray(parsedRows) || parsedRows.length === 0) throw new Error('No scan counts to submit.');
 
     const sheet = getInventorySheet_();
-    const updates = [];
+    const changes = new Map();
     parsedRows.forEach(row => {
       const cleanSku = String(row.sku || row.SKU || '').trim().toUpperCase();
-      const quantityChange = Number(row.quantityChange || row.change || 0);
+      const quantityChange = Number(row.quantityChange ?? row.change);
       if (!cleanSku) throw new Error('SKU is required.');
-      if (!Number.isFinite(quantityChange) || quantityChange === 0) throw new Error(`Quantity change must not be zero for ${cleanSku}.`);
+      if (!Number.isSafeInteger(quantityChange) || quantityChange === 0) throw new Error(`Quantity change must be a nonzero whole number for ${cleanSku}.`);
+      const combined = (changes.get(cleanSku) || 0) + quantityChange;
+      if (!Number.isSafeInteger(combined)) throw new Error(`Quantity change is too large for ${cleanSku}.`);
+      changes.set(cleanSku, combined);
+    });
 
+    const updates = [];
+    changes.forEach((quantityChange, cleanSku) => {
+      if (quantityChange === 0) return;
       const rowNumber = findRowBySku_(sheet, cleanSku);
       if (!rowNumber) throw new Error(`${cleanSku} was not found.`);
 
       const existing = getRugByRow_(sheet, rowNumber);
       const previousQuantity = Number(existing.Quantity) || 0;
       const newQuantity = previousQuantity + quantityChange;
-      if (newQuantity < 0) throw new Error(`${cleanSku} cannot go below zero.`);
+      if (!Number.isSafeInteger(newQuantity) || newQuantity < 0) throw new Error(`${cleanSku} would have an invalid quantity.`);
 
       updates.push({ rowNumber, existing, cleanSku, quantityChange, previousQuantity, newQuantity });
     });
@@ -429,14 +437,17 @@ function getTransactions(limit) {
   if (!sheet) {
     return { success: true, message: 'Transactions loaded.', transactions: [] };
   }
-  const values = sheet.getDataRange().getValues();
-  if (values.length <= 1) {
+  const lastRow = sheet.getLastRow();
+  if (lastRow <= 1) {
     return { success: true, message: 'Transactions loaded.', transactions: [] };
   }
 
-  const headers = values[0];
-  const maxRows = Math.max(1, Number(limit || 75));
-  const transactions = values.slice(1)
+  const columnCount = CONFIG.TRANSACTION_HEADERS.length;
+  const headers = sheet.getRange(1, 1, 1, columnCount).getValues()[0];
+  const maxRows = Math.min(500, Math.max(1, Math.floor(Number(limit) || 75)));
+  const firstRow = Math.max(2, lastRow - maxRows + 1);
+  const values = sheet.getRange(firstRow, 1, lastRow - firstRow + 1, columnCount).getValues();
+  const transactions = values
     .filter(row => row.some(cell => String(cell || '').trim()))
     .slice(-maxRows)
     .map(row => rowToObject_(headers, row))
@@ -468,12 +479,13 @@ function ensureSheet_(ss, name, headers) {
     return sheet;
   }
 
-  const values = sheet.getRange(1, 1, lastRow, lastColumn).getValues();
-  const currentHeaders = values[0].map(header => String(header || '').trim());
+  const currentHeaders = sheet.getRange(1, 1, 1, lastColumn).getValues()[0]
+    .map(header => String(header || '').trim());
   const hasHeaders = headers.length === currentHeaders.filter(Boolean).length &&
     headers.every((header, index) => currentHeaders[index] === header);
 
   if (!hasHeaders) {
+    const values = sheet.getRange(1, 1, lastRow, lastColumn).getValues();
     const headerIndex = currentHeaders.reduce((index, header, columnIndex) => {
       if (header) index[header] = columnIndex;
       return index;
@@ -493,8 +505,8 @@ function ensureSheet_(ss, name, headers) {
       sheet.getRange(2, 1, remappedRows.length, headers.length).setValues(remappedRows);
     }
     sheet.setFrozenRows(1);
+    sheet.autoResizeColumns(1, headers.length);
   }
-  sheet.autoResizeColumns(1, headers.length);
   return sheet;
 }
 
@@ -576,7 +588,7 @@ function validateRug_(rug) {
   if (!rug.Design) throw new Error('Design is required.');
   if (!rug.Size) throw new Error('Size is required.');
   if (!rug.Color) throw new Error('Color is required.');
-  if (!Number.isFinite(rug.Quantity) || rug.Quantity < 0) throw new Error('Quantity must be zero or more.');
+  if (!Number.isSafeInteger(rug.Quantity) || rug.Quantity < 0) throw new Error('Quantity must be a whole number of zero or more.');
 }
 
 function generateNextSku_(sheet, rug) {
@@ -690,15 +702,7 @@ function withLock_(callback) {
   }
 }
 
-function isPasswordValid_(password) {
-  return String(password || '') === CONFIG.PASSWORD;
-}
-
 function handleApiAction_(action, password, body) {
-  if (!isPasswordValid_(password)) {
-    return { success: false, message: 'Invalid password.' };
-  }
-
   try {
     switch (action) {
       case 'getInventory':

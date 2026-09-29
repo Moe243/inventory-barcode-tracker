@@ -362,19 +362,12 @@
 <body>
   <header>
     <h1>Lotus Rugs Mobile Scanner</h1>
-    <div id="headerStatus" class="muted">Load inventory, choose Receive or Remove, then start scanning.</div>
+    <div id="headerStatus" class="muted">Choose Receive or Remove, then start scanning.</div>
   </header>
 
   <main>
     <section id="setupSection">
-      <label>Apps Script web app URL
-        <input id="apiUrlInput" autocomplete="url">
-      </label>
-      <label>Password
-        <input id="passwordInput" type="password" autocomplete="current-password">
-      </label>
       <div class="toolbar">
-        <button id="loadBtn" type="button">Load inventory</button>
         <button id="refreshBtn" class="secondary" type="button">Refresh</button>
       </div>
       <div id="setupNotice" class="notice"></div>
@@ -444,11 +437,12 @@
   </main>
 
   <script>
-    const DEFAULT_API_URL = 'https://script.google.com/macros/s/AKfycbzSniBOoKRH74rHd3KOAJi52I-HLVg5hvOztCH-UpNeD4ehOhWSF-Tnw9ZkBGAaGfiS-w/exec';
-    const storage = window.localStorage;
+    const DEFAULT_API_URL = 'https://script.google.com/macros/s/AKfycbxsELtpvQD2nVkjTg5Z9tly-lszCiLrXXMLcQOHQ6d5FWngCTGNwoLspdbQa2mpDVPa/exec';
+    window.localStorage.removeItem('lotusScannerApiUrl');
+    window.localStorage.removeItem('lotusScannerPassword');
+    window.sessionStorage.removeItem('lotusScannerSessionPassword');
     const state = {
-      apiUrl: storage.getItem('lotusScannerApiUrl') || DEFAULT_API_URL,
-      password: storage.getItem('lotusScannerPassword') || '',
+      apiUrl: DEFAULT_API_URL,
       inventory: [],
       selectedSku: '',
       mode: 'receive',
@@ -463,9 +457,6 @@
 
     const $ = selector => document.querySelector(selector);
 
-    $('#apiUrlInput').value = state.apiUrl;
-    $('#passwordInput').value = state.password;
-    $('#loadBtn').addEventListener('click', loadInventory);
     $('#refreshBtn').addEventListener('click', loadInventory);
     $('#receiveModeBtn').addEventListener('click', () => setMode('receive'));
     $('#removeModeBtn').addEventListener('click', () => setMode('remove'));
@@ -485,6 +476,7 @@
     window.addEventListener('pagehide', stopScanner);
 
     renderAll();
+    loadInventory();
 
     function setMode(mode) {
       state.mode = mode;
@@ -494,16 +486,6 @@
     }
 
     async function loadInventory() {
-      state.apiUrl = $('#apiUrlInput').value.trim();
-      state.password = $('#passwordInput').value;
-      storage.setItem('lotusScannerApiUrl', state.apiUrl);
-      storage.setItem('lotusScannerPassword', state.password);
-
-      if (!state.apiUrl || !state.password) {
-        showSetupNotice('Enter the Apps Script URL and password.', true);
-        return;
-      }
-
       showSetupNotice('Loading inventory...');
       const response = await api('getInventory');
       if (!response.success) {
@@ -746,7 +728,6 @@
         const url = new URL(state.apiUrl);
         url.searchParams.set('callback', callbackName);
         url.searchParams.set('action', action);
-        url.searchParams.set('password', state.password);
         Object.entries(params).forEach(([key, value]) => url.searchParams.set(key, value));
 
         const timeout = window.setTimeout(() => {
