@@ -39,7 +39,7 @@ The main Apps Script app can stay as your dashboard. The live warehouse scanner 
 6. Set branch to `main` and folder to `/docs`.
 7. Save.
 8. Open the GitHub Pages scanner URL on your iPhone.
-9. Enter the Apps Script `/exec` URL and app password. The scanner remembers the URL, but you must enter the password again after reopening the page.
+9. Open the shared scanner link and enter the app password. The scanner is configured for the warehouse deployment URL in `docs/scanner.html`; workers do not enter an Apps Script URL. A successful sign-in lasts for the current browser tab session, and inventory loads automatically if that tab is reloaded.
 10. Tap `Load inventory`.
 11. Choose `Receive` or `Remove`.
 12. Tap `Start live scanner` and allow camera permission.
