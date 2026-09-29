@@ -2,8 +2,7 @@ const CONFIG = {
   INVENTORY_SHEET: 'Inventory',
   TRANSACTIONS_SHEET: 'Transactions',
   INVENTORY_HEADERS: ['SKU', 'Name', 'Design', 'Size', 'Color', 'Quantity', 'BarcodeValue', 'CreatedAt', 'UpdatedAt'],
-  TRANSACTION_HEADERS: ['Timestamp', 'Action', 'SKU', 'QuantityChange', 'PreviousQuantity', 'NewQuantity', 'Notes'],
-  PASSWORD: 'lotus'
+  TRANSACTION_HEADERS: ['Timestamp', 'Action', 'SKU', 'QuantityChange', 'PreviousQuantity', 'NewQuantity', 'Notes']
 };
 
 function setupSheet() {
@@ -241,20 +240,27 @@ function batchAdjustQuantity(rows, notes) {
     if (!Array.isArray(parsedRows) || parsedRows.length === 0) throw new Error('No scan counts to submit.');
 
     const sheet = getInventorySheet_();
-    const updates = [];
+    const changes = new Map();
     parsedRows.forEach(row => {
       const cleanSku = String(row.sku || row.SKU || '').trim().toUpperCase();
-      const quantityChange = Number(row.quantityChange || row.change || 0);
+      const quantityChange = Number(row.quantityChange ?? row.change);
       if (!cleanSku) throw new Error('SKU is required.');
-      if (!Number.isFinite(quantityChange) || quantityChange === 0) throw new Error(`Quantity change must not be zero for ${cleanSku}.`);
+      if (!Number.isSafeInteger(quantityChange) || quantityChange === 0) throw new Error(`Quantity change must be a nonzero whole number for ${cleanSku}.`);
+      const combined = (changes.get(cleanSku) || 0) + quantityChange;
+      if (!Number.isSafeInteger(combined)) throw new Error(`Quantity change is too large for ${cleanSku}.`);
+      changes.set(cleanSku, combined);
+    });
 
+    const updates = [];
+    changes.forEach((quantityChange, cleanSku) => {
+      if (quantityChange === 0) return;
       const rowNumber = findRowBySku_(sheet, cleanSku);
       if (!rowNumber) throw new Error(`${cleanSku} was not found.`);
 
       const existing = getRugByRow_(sheet, rowNumber);
       const previousQuantity = Number(existing.Quantity) || 0;
       const newQuantity = previousQuantity + quantityChange;
-      if (newQuantity < 0) throw new Error(`${cleanSku} cannot go below zero.`);
+      if (!Number.isSafeInteger(newQuantity) || newQuantity < 0) throw new Error(`${cleanSku} would have an invalid quantity.`);
 
       updates.push({ rowNumber, existing, cleanSku, quantityChange, previousQuantity, newQuantity });
     });
@@ -691,7 +697,8 @@ function withLock_(callback) {
 }
 
 function isPasswordValid_(password) {
-  return String(password || '') === CONFIG.PASSWORD;
+  const configuredPassword = PropertiesService.getScriptProperties().getProperty('APP_PASSWORD');
+  return !!configuredPassword && String(password || '') === configuredPassword;
 }
 
 function handleApiAction_(action, password, body) {
