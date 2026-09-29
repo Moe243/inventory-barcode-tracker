@@ -362,16 +362,12 @@
 <body>
   <header>
     <h1>Lotus Rugs Mobile Scanner</h1>
-    <div id="headerStatus" class="muted">Sign in, choose Receive or Remove, then start scanning.</div>
+    <div id="headerStatus" class="muted">Choose Receive or Remove, then start scanning.</div>
   </header>
 
   <main>
     <section id="setupSection">
-      <label>Password
-        <input id="passwordInput" type="password" autocomplete="current-password">
-      </label>
       <div class="toolbar">
-        <button id="loadBtn" type="button">Load inventory</button>
         <button id="refreshBtn" class="secondary" type="button">Refresh</button>
       </div>
       <div id="setupNotice" class="notice"></div>
@@ -442,12 +438,11 @@
 
   <script>
     const DEFAULT_API_URL = 'https://script.google.com/macros/s/AKfycbxsELtpvQD2nVkjTg5Z9tly-lszCiLrXXMLcQOHQ6d5FWngCTGNwoLspdbQa2mpDVPa/exec';
-    const storage = window.sessionStorage;
     window.localStorage.removeItem('lotusScannerApiUrl');
     window.localStorage.removeItem('lotusScannerPassword');
+    window.sessionStorage.removeItem('lotusScannerSessionPassword');
     const state = {
       apiUrl: DEFAULT_API_URL,
-      password: storage.getItem('lotusScannerSessionPassword') || '',
       inventory: [],
       selectedSku: '',
       mode: 'receive',
@@ -462,8 +457,6 @@
 
     const $ = selector => document.querySelector(selector);
 
-    $('#passwordInput').value = state.password;
-    $('#loadBtn').addEventListener('click', loadInventory);
     $('#refreshBtn').addEventListener('click', loadInventory);
     $('#receiveModeBtn').addEventListener('click', () => setMode('receive'));
     $('#removeModeBtn').addEventListener('click', () => setMode('remove'));
@@ -483,7 +476,7 @@
     window.addEventListener('pagehide', stopScanner);
 
     renderAll();
-    if (state.password) loadInventory();
+    loadInventory();
 
     function setMode(mode) {
       state.mode = mode;
@@ -493,22 +486,13 @@
     }
 
     async function loadInventory() {
-      state.password = $('#passwordInput').value;
-
-      if (!state.password) {
-        showSetupNotice('Enter the warehouse password.', true);
-        return;
-      }
-
       showSetupNotice('Loading inventory...');
       const response = await api('getInventory');
       if (!response.success) {
-        storage.removeItem('lotusScannerSessionPassword');
         showSetupNotice(response.message || 'Inventory could not load.', true);
         return;
       }
 
-      storage.setItem('lotusScannerSessionPassword', state.password);
       state.inventory = (response.inventory || []).map(rug => ({
         ...rug,
         SKU: String(rug.SKU || '').toUpperCase()
@@ -744,7 +728,6 @@
         const url = new URL(state.apiUrl);
         url.searchParams.set('callback', callbackName);
         url.searchParams.set('action', action);
-        url.searchParams.set('password', state.password);
         Object.entries(params).forEach(([key, value]) => url.searchParams.set(key, value));
 
         const timeout = window.setTimeout(() => {
