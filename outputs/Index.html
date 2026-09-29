@@ -828,6 +828,7 @@
   </div>
 
   <script>
+    const MAX_VISIBLE_ROWS = 100;
     const state = {
       password: '',
       inventory: [],
@@ -1058,9 +1059,9 @@
       $('#designCount').textContent = new Set(state.inventory.map(rug => rug.Design).filter(Boolean)).size;
       $('#sizeCount').textContent = new Set(state.inventory.map(rug => rug.Size).filter(Boolean)).size;
       $('#colorCount').textContent = new Set(state.inventory.map(rug => rug.Color).filter(Boolean)).size;
-      $('#visibleCount').value = `${rows.length} of ${state.inventory.length}`;
+      $('#visibleCount').value = `Showing ${Math.min(rows.length, MAX_VISIBLE_ROWS)} of ${rows.length} matches (${state.inventory.length} SKUs)`;
 
-      $('#inventoryBody').innerHTML = rows.map(rug => `
+      $('#inventoryBody').innerHTML = rows.slice(0, MAX_VISIBLE_ROWS).map(rug => `
         <tr>
           <td>${escapeHtml(rug.SKU)}</td>
           <td>${escapeHtml(rug.Name)}</td>
@@ -1200,11 +1201,12 @@
         !query || [rug.SKU, rug.Name, rug.Design, rug.Size, rug.Color].some(value => String(value || '').toLowerCase().includes(query))
       );
 
-      $('#scanSkuSelect').innerHTML = matches.map(rug => `
+      const visibleMatches = matches.slice(0, MAX_VISIBLE_ROWS);
+      $('#scanSkuSelect').innerHTML = visibleMatches.map(rug => `
         <option value="${escapeAttr(rug.SKU)}">${escapeHtml(rug.SKU)} - ${escapeHtml(rug.Name)} - ${escapeHtml(rug.Design)} - ${escapeHtml(rug.Size)} - ${escapeHtml(rug.Color)}</option>
       `).join('');
 
-      const selectedStillVisible = matches.some(rug => rug.SKU === previousSku);
+      const selectedStillVisible = visibleMatches.some(rug => rug.SKU === previousSku);
       if (selectedStillVisible) $('#scanSkuSelect').value = previousSku;
       renderScanTarget();
     }
@@ -1419,7 +1421,7 @@
         !query || [rug.SKU, rug.Name, rug.Design, rug.Size, rug.Color].some(value => String(value || '').toLowerCase().includes(query))
       );
 
-      $('#labelPickerBody').innerHTML = rows.map(rug => {
+      $('#labelPickerBody').innerHTML = rows.slice(0, MAX_VISIBLE_ROWS).map(rug => {
         const count = Number(state.labelSelection[rug.SKU] || 0);
         return `
           <tr>
