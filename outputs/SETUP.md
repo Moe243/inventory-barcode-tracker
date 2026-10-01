@@ -1,135 +1,95 @@
-# Lotus Rugs Inventory Setup
+# Lotus Rugs Deployment
 
-This project uses Google Sheets as the inventory database and Google Apps Script as the backend/web app host.
+The manager page and worker scanner use the same Google Sheet. There is no password or worker setup form.
 
-## Files
+## Update The Existing Apps Script Project
 
-- `Code.gs`: Apps Script backend.
-- `Index.html`: Web app frontend.
-- `docs/scanner.html`: separate mobile live scanner page for GitHub Pages.
+1. Open the Google Sheet that should contain your actual inventory. Choose **Extensions > Apps Script**. Use the existing project.
+2. Replace **Code.gs** with `outputs/Code.gs`.
+3. Replace the HTML file named **Index** with `outputs/Index.html`. Save both files.
+4. Select **setupSheet** in the function dropdown and click **Run**. Approve Google authorization if requested.
+5. Confirm your spreadsheet contains **Inventory** and **Transactions** tabs. Setup preserves existing data and inserts missing columns.
+6. Choose **Deploy > Manage deployments**, select the existing web app, click the pencil icon, and select **New version**.
+7. Set **Execute as: Me** and **Who has access: Anyone**. Choose access without Google sign-in, not "Anyone with a Google account."
+8. Click **Deploy**. Updating this existing deployment preserves the production `/exec` URL already in `docs/config.js`.
+9. Open the manager URL and the GitHub worker link. Both load automatically and should show the same inventory.
 
-## Setup Steps
+Saving code alone does not update the public web app. Run setup once for this upgrade, then deploy a new version.
 
-1. Create a Google Sheet named `Lotus Rugs Inventory`.
-2. In the Sheet, open `Extensions > Apps Script`.
-3. Replace the default Apps Script code with the contents of `Code.gs`.
-4. Create a new HTML file named `Index.html`.
-5. Paste the contents of `Index.html` into that file.
-6. In `Code.gs`, change the temporary password value `change-me-lotus` to your own password:
-   - `CONFIG.PASSWORD`
-7. In Apps Script, select `setupSheet` from the function dropdown and click `Run`.
-8. Approve the Google permissions.
-9. Deploy the app:
-   - Click `Deploy > New deployment`.
-   - Choose `Web app`.
-   - Set `Execute as` to `Me`.
-   - Set `Who has access` to `Anyone with the link`.
-   - Click `Deploy`.
-10. Copy the Web App URL.
-11. Open the Web App URL and test adding rugs, filtering by design/size/color, scanning/counting inventory, exporting, and printing selected barcode labels.
+### If The Script Is Standalone
 
-## Mobile Live Scanner Setup
+Setup normally records the bound spreadsheet ID in private Script Properties. If this script is not attached to a Sheet, set **INVENTORY_SPREADSHEET_ID** in **Project Settings > Script properties** to your existing inventory spreadsheet ID, then run setup. The ID is between `/d/` and `/edit` in the spreadsheet URL. Do not put it in GitHub client code.
 
-The main Apps Script app can stay as your dashboard. The live warehouse scanner should run from the separate mobile web page in `docs/scanner.html`, because iPhone Safari/Chrome may block live camera access inside the Apps Script web app frame.
+Once this property is set, all devices read and write the same spreadsheet. Setup does not create a replacement spreadsheet.
 
-1. Paste the updated `Code.gs` into Apps Script.
-2. Save and deploy a **New version** of the Apps Script web app.
-3. In GitHub, open the repository settings for `inventory-barcode-tracker`.
-4. Go to `Pages`.
-5. Set source to `Deploy from a branch`.
-6. Set branch to `main` and folder to `/docs`.
-7. Save.
-8. Open the GitHub Pages scanner URL on your iPhone.
-9. Enter the Apps Script `/exec` URL and app password.
-10. Tap `Load inventory`.
-11. Choose `Receive` or `Remove`.
-12. Tap `Start live scanner` and allow camera permission.
+## GitHub Pages
 
-If you are upgrading from the older long SKU format, run `migrateExistingSkusToShortFormat` once from Apps Script after deploying the updated `Code.gs`, then reprint barcode labels.
+- Repository: https://github.com/Moe243/inventory-barcode-tracker
+- Worker: https://moe243.github.io/inventory-barcode-tracker/scanner.html
+- Files: `docs/scanner.html` and `docs/config.js`
+- Pages: **Settings > Pages > Deploy from a branch > main > /docs**
+- Production endpoint is configured in `docs/config.js`. Workers enter no URLs or passwords.
+- If you create a different Apps Script deployment instead of updating the existing one, update `apiUrl` in `docs/config.js` and publish that configuration once.
 
-The scanner page works in warehouse batch mode:
+## Daily Workflow
 
-- Scan any known rug SKU.
-- Pending counts are grouped by SKU.
-- Receive scans submit positive quantity changes.
-- Remove scans submit negative quantity changes.
-- Nothing changes in the sheet until you tap `Submit batch`.
+Managers add/edit rugs, import files, and print labels from Apps Script. Blank SKUs generate `RUG-0001` style identifiers. Creating an existing SKU is rejected; use Edit. New rugs can start at quantity zero.
 
-You can also check `Require selected SKU` if you only want one selected SKU to count and want mismatched labels rejected.
+Workers open the GitHub link, choose Receive or Remove, and tap **Start live scanner**. Allow camera access in the phone browser. Scans add pending counts. Move a label out of view before scanning another rug with the same SKU; a label held continuously in view is counted only once. Hardware scanners and typed SKUs also work.
 
-## Embed On Your Website
+Review counts and press **Submit batch**. Displayed quantities update only after server confirmation. Receive feedback is green; Remove feedback is red. Inventory and Transactions tabs load central data. Refresh either interface to see another device's changes.
 
-Use the deployed Apps Script URL in an iframe:
+If confirmation is lost, keep the page open and retry the same batch. Its reference is recorded in Transactions, so a retry does not apply it twice. While confirmation is uncertain, the batch cannot be edited or cleared. Pending counts are temporary, not permanent inventory.
 
-```html
-<iframe src="GOOGLE_APPS_SCRIPT_WEB_APP_URL" width="100%" height="900" style="border:0;" allow="camera"></iframe>
-```
+## CSV And Excel Import
 
-## Google Sheet Structure
+The manager reads CSV, XLSX, and XLS locally using SheetJS. The first worksheet is used. Headers ignore case/spaces and accept:
 
-The `setupSheet()` function creates these sheets automatically.
-
-### Inventory
-
-| SKU | Name | Design | Size | Color | Quantity | BarcodeValue | CreatedAt | UpdatedAt |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- |
-
-### Transactions
-
-| Timestamp | Action | SKU | QuantityChange | PreviousQuantity | NewQuantity | Notes |
-| --- | --- | --- | --- | --- | --- | --- |
-
-## CSV Import Format
-
-CSV imports should use these headers:
+| Field | Column names |
+| --- | --- |
+| SKU | sku (optional; blank generates a SKU) |
+| Name | name, collection, rug name |
+| Design | design, pattern, design number |
+| Size | size |
+| Color | color, colour |
+| Quantity | quantity, qty (optional; blank defaults to zero) |
 
 ```csv
 sku,name,design,size,color,quantity
-RUG-0001,Diamond,2010,8x10,Turquoise,2
-RUG-0002,Sofia,187,5x8,Blue,1
+,Diamond,2010,8x10,Turquoise,0
+,Sofia,187,5x8,Blue,0
 ```
 
-Blank SKUs are allowed during import. The backend generates short camera-friendly SKUs like `RUG-0001`.
+Name, Design, Size, and Color are required. Quantities must be nonnegative whole numbers. Import at most 2000 rows from a file under 10 MB.
 
-## Barcode Receiving Workflow
+Default mode adds new rugs and skips existing SKUs. Replacing existing details and quantities requires explicitly selecting update mode and confirming it. Invalid rows and duplicate SKUs/products are reported by file row number. Valid rows are saved to Inventory and logged as IMPORT.
 
-1. Add a rug with name, design, size, and color.
-2. Leave SKU blank so the app creates the next short SKU.
-3. Keep starting quantity at `0` if you plan to receive stock by scanning.
-4. Open `Barcodes`, select the SKUs you want, set label counts, and print.
-5. Open `Scan / Count`, search/select the target SKU, choose `Receive` or `Remove`, and start the camera scanner on a phone or tablet.
-6. Matching scans increase the pending count. Wrong SKUs show a warning and do not count.
-7. Press `Submit scanned count` when the batch is done.
+## Sheet Structure
 
-## Mobile Warehouse Workflow
+Inventory columns remain:
 
-1. Print barcode labels from the main app.
-2. Open the GitHub Pages scanner on your iPhone.
-3. Load inventory.
-4. Choose `Receive` for incoming rugs or `Remove` for outgoing rugs.
-5. Walk the warehouse and scan labels live.
-6. Review the pending batch.
-7. Submit the batch once when finished.
+`SKU, Name, Design, Size, Color, Quantity, BarcodeValue, CreatedAt, UpdatedAt`
 
-## Security Notes
+Transactions retain the original columns and add product snapshots/source/batch reference:
 
-This setup is intended for internal warehouse use.
+`Timestamp, Action, SKU, QuantityChange, PreviousQuantity, NewQuantity, Notes, Name, Design, Size, Color, Source, RequestId`
 
-The easiest deployment is:
+Existing history is retained. Old entries may lack product/source details. New entries include them. Both interfaces show the newest 75 first.
 
-- `Execute as: Me`
-- `Who has access: Anyone with the link`
+## Labels And Existing SKUs
 
-That means anyone who has the deployed web app link and password can access the app. The included password screen checks the password on the Apps Script backend, but it is still basic protection only, not enterprise security. For stronger security, deploy access only to specific Google accounts in your organization.
+The manager generates CODE128 labels from backend BarcodeValue (equal to SKU for new rugs). Labels show SKU, Name, Design, Size, and Color. Workers have no label-generation controls.
 
-## Practical Notes
+This upgrade does not rename SKUs or run a migration automatically. The old optional `migrateExistingSkusToShortFormat` editor function is preserved. Only run it deliberately to convert old long SKUs; copy the Sheet first and reprint labels afterward.
 
-- Writes use `LockService` so two people adjusting inventory at the same time are less likely to overwrite each other.
-- Barcode labels use JsBarcode CODE128 from a CDN.
-- Camera scanning uses the ZXing browser barcode library from a CDN.
-- The separate mobile scanner also uses ZXing and submits grouped scan batches through Apps Script.
-- Existing SKUs in the Add Rug form can either add to the current quantity or replace the current quantity.
-- The Add Rug form has buttons for adding another rug with the same name/design or starting a new rug.
-- The app prevents duplicate `Name + Design + Size + Color` rows.
-- CSV import updates existing SKUs and adds new SKUs.
-- Barcode labels encode the short SKU and print name, design, size, and color under the barcode.
+## Access
+
+Anonymous Apps Script access is required for GitHub Pages. At your request, both interfaces are password-free. Anyone with their links can view inventory and use available functions. The worker API limits actions to inventory/history reads and receive/remove batches. The manager URL/API have no authentication. The interface split is a workflow distinction, not user authorization.
+
+No Google credentials, spreadsheet ID, password, or OAuth token is shipped in worker code. This basic version assumes trusted use of its public links.
+
+## Verify After Deployment
+
+Create a unique test rug at zero. Refresh the worker and inspect Inventory. Receive three and submit; remove one and submit. Both dashboards and the Sheet must show two. Reopen the worker in a fresh session and verify two remains. Check history on both interfaces and Transactions. Import a small file, verify valid rows/skipped-row reports, print a label, and scan it on the warehouse phone.
+
+Local tests use real application code with a Sheets service test double. They do not modify production data or replace the live phone test.

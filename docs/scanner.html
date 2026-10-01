@@ -6,6 +6,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-title" content="Lotus Scanner">
   <title>Lotus Rugs Mobile Scanner</title>
+  <script src="config.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@zxing/browser@0.1.5/umd/zxing-browser.min.js"></script>
   <style>
     :root {
@@ -351,6 +352,16 @@
       display: none !important;
     }
 
+    .tabs { display: flex; gap: 8px; margin-top: 10px; }
+    .tabs button { padding: 10px; background: #e2e8f0; color: var(--ink); }
+    .tabs button.active { background: var(--accent); color: #fff; }
+    .table-wrap { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th, td { text-align: left; padding: 10px 8px; border-bottom: 1px solid var(--line); }
+    th { white-space: nowrap; }
+    td { overflow-wrap: anywhere; }
+    h2 { margin: 0; font-size: 18px; }
+
     @media (max-width: 560px) {
       .row,
       .stats {
@@ -362,25 +373,23 @@
 <body>
   <header>
     <h1>Lotus Rugs Mobile Scanner</h1>
-    <div id="headerStatus" class="muted">Load inventory, choose Receive or Remove, then start scanning.</div>
+    <div id="headerStatus" class="muted" aria-live="polite">Loading inventory...</div>
+    <nav class="tabs" aria-label="Warehouse views">
+      <button type="button" data-view="scanner" class="active">Scanner</button>
+      <button type="button" data-view="inventory">Inventory</button>
+      <button type="button" data-view="transactions">Transactions</button>
+    </nav>
   </header>
 
   <main>
     <section id="setupSection">
-      <label>Apps Script web app URL
-        <input id="apiUrlInput" autocomplete="url">
-      </label>
-      <label>Password
-        <input id="passwordInput" type="password" autocomplete="current-password">
-      </label>
       <div class="toolbar">
-        <button id="loadBtn" type="button">Load inventory</button>
         <button id="refreshBtn" class="secondary" type="button">Refresh</button>
       </div>
-      <div id="setupNotice" class="notice"></div>
+      <div id="setupNotice" class="notice" role="status">Loading inventory...</div>
     </section>
 
-    <section>
+    <section data-panel="scanner">
       <div class="mode">
         <button id="receiveModeBtn" class="active receive" type="button">Receive</button>
         <button id="removeModeBtn" class="remove" type="button">Remove</button>
@@ -403,7 +412,7 @@
       <div id="resultList" class="result-list"></div>
     </section>
 
-    <section>
+    <section data-panel="scanner">
       <div class="camera">
         <video id="video" muted playsinline></video>
         <div id="scanFlash" class="scan-flash">
@@ -415,10 +424,10 @@
       </div>
       <div id="scanStatusCard" class="scan-status-card">
         <strong id="scanStatusTitle">Ready to scan</strong>
-        <span id="scanStatusDetail" class="muted">Successful scans will flash green here.</span>
+        <span id="scanStatusDetail" class="muted"></span>
       </div>
       <div class="toolbar">
-        <button id="startBtn" type="button">Start live scanner</button>
+        <button id="startBtn" type="button" disabled>Start live scanner</button>
         <button id="stopBtn" class="secondary" type="button" disabled>Stop</button>
       </div>
       <form id="manualForm" class="row">
@@ -430,7 +439,7 @@
       <div id="scanNotice" class="notice"></div>
     </section>
 
-    <section>
+    <section data-panel="scanner">
       <label>Batch notes
         <textarea id="notesInput" rows="2" placeholder="Receiving batch, outgoing order, stock check, etc."></textarea>
       </label>
@@ -441,15 +450,36 @@
       </div>
       <div id="submitNotice" class="notice"></div>
     </section>
+    <section data-panel="inventory" class="hidden">
+      <h2>Inventory</h2>
+      <label>Search inventory<input id="inventorySearch" type="search" placeholder="SKU, name, design, size, or color"></label>
+      <div id="inventorySummary" class="muted"></div>
+      <div class="table-wrap"><table>
+        <thead><tr><th>SKU</th><th>Name</th><th>Design</th><th>Size</th><th>Color</th><th>Quantity</th></tr></thead>
+        <tbody id="inventoryBody"></tbody>
+      </table></div>
+    </section>
+    <section data-panel="transactions" class="hidden">
+      <h2>Recent transactions</h2>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Time</th><th>Action</th><th>SKU / Rug</th><th>Size</th><th>Change</th><th>Before</th><th>After</th><th>Source / Notes</th></tr></thead>
+        <tbody id="transactionsBody"></tbody>
+      </table></div>
+    </section>
   </main>
 
   <script>
-    const DEFAULT_API_URL = 'https://script.google.com/macros/s/AKfycbzSniBOoKRH74rHd3KOAJi52I-HLVg5hvOztCH-UpNeD4ehOhWSF-Tnw9ZkBGAaGfiS-w/exec';
-    const storage = window.localStorage;
     const state = {
-      apiUrl: storage.getItem('lotusScannerApiUrl') || DEFAULT_API_URL,
-      password: storage.getItem('lotusScannerPassword') || '',
+      apiUrl: window.LOTUS_CONFIG && window.LOTUS_CONFIG.apiUrl,
       inventory: [],
+      transactions: [],
+      loaded: false,
+      loading: false,
+      submitting: false,
+      cameraStarting: false,
+      cameraGeneration: 0,
+      uncertain: false,
+      requestId: '',
       selectedSku: '',
       mode: 'receive',
       batch: {},
@@ -463,10 +493,15 @@
 
     const $ = selector => document.querySelector(selector);
 
-    $('#apiUrlInput').value = state.apiUrl;
-    $('#passwordInput').value = state.password;
-    $('#loadBtn').addEventListener('click', loadInventory);
     $('#refreshBtn').addEventListener('click', loadInventory);
+    $('#inventorySearch').addEventListener('input', renderInventory);
+    document.querySelectorAll('[data-view]').forEach(button => button.addEventListener('click', () => {
+      const view = button.dataset.view;
+      document.querySelectorAll('[data-view]').forEach(tab => tab.classList.toggle('active', tab === button));
+      document.querySelectorAll('[data-panel]').forEach(panel => panel.classList.toggle('hidden', panel.dataset.panel !== view));
+      if (view !== 'scanner') stopScanner();
+      if (view === 'transactions') loadInventory();
+    }));
     $('#receiveModeBtn').addEventListener('click', () => setMode('receive'));
     $('#removeModeBtn').addEventListener('click', () => setMode('remove'));
     $('#targetOnlyInput').addEventListener('change', renderResults);
@@ -476,7 +511,7 @@
     $('#manualForm').addEventListener('submit', event => {
       event.preventDefault();
       const input = $('#manualInput');
-      handleCode(input.value);
+      handleCode(input.value, true);
       input.value = '';
       input.focus();
     });
@@ -485,29 +520,31 @@
     window.addEventListener('pagehide', stopScanner);
 
     renderAll();
+    loadInventory();
 
     function setMode(mode) {
+      if (state.submitting || state.uncertain) return;
       state.mode = mode;
       $('#receiveModeBtn').classList.toggle('active', mode === 'receive');
       $('#removeModeBtn').classList.toggle('active', mode === 'remove');
       showScanNotice(`${mode === 'receive' ? 'Receive' : 'Remove'} mode selected.`);
+      renderAll();
     }
 
     async function loadInventory() {
-      state.apiUrl = $('#apiUrlInput').value.trim();
-      state.password = $('#passwordInput').value;
-      storage.setItem('lotusScannerApiUrl', state.apiUrl);
-      storage.setItem('lotusScannerPassword', state.password);
-
-      if (!state.apiUrl || !state.password) {
-        showSetupNotice('Enter the Apps Script URL and password.', true);
-        return;
-      }
-
+      if (state.loading || state.submitting) return;
+      state.loading = true;
+      $('#refreshBtn').disabled = true;
       showSetupNotice('Loading inventory...');
-      const response = await api('getInventory');
+      renderAll();
+      const response = await api('getInitialData');
+      state.loading = false;
+      $('#refreshBtn').disabled = false;
       if (!response.success) {
-        showSetupNotice(response.message || 'Inventory could not load.', true);
+        state.loaded = false;
+        stopScanner();
+        renderAll();
+        showSetupNotice('Unable to connect to inventory. Check your internet connection or contact a manager.', true);
         return;
       }
 
@@ -515,13 +552,16 @@
         ...rug,
         SKU: String(rug.SKU || '').toUpperCase()
       }));
+      state.transactions = response.transactions || [];
+      state.loaded = true;
       showSetupNotice(`Loaded ${state.inventory.length} SKUs.`);
       renderAll();
     }
 
     async function startScanner() {
-      if (!state.inventory.length) {
-        showScanNotice('Load inventory before scanning.', true);
+      if (state.cameraStarting) return;
+      if (!state.loaded || state.submitting || state.uncertain || !state.inventory.length) {
+        showScanNotice('Inventory is not ready for scanning. Refresh or contact a manager.', true);
         return;
       }
       if (!window.ZXingBrowser || !ZXingBrowser.BrowserMultiFormatReader) {
@@ -534,13 +574,16 @@
       }
 
       stopScanner();
+      const generation = state.cameraGeneration;
+      state.cameraStarting = true;
+      $('#startBtn').disabled = true;
       primeAudio();
 
       try {
         state.reader = new ZXingBrowser.BrowserMultiFormatReader();
         const video = $('#video');
         const onResult = result => {
-          if (!result) return;
+          if (!result || generation !== state.cameraGeneration) return;
           const code = typeof result.getText === 'function' ? result.getText() : String(result.text || result);
           handleCode(code);
         };
@@ -553,34 +596,49 @@
           }
         };
 
+        let controls;
         if (typeof state.reader.decodeFromConstraints === 'function') {
-          state.controls = await state.reader.decodeFromConstraints(constraints, video, onResult);
+          controls = await state.reader.decodeFromConstraints(constraints, video, onResult);
         } else {
-          state.controls = await state.reader.decodeFromVideoDevice(null, video, onResult);
+          controls = await state.reader.decodeFromVideoDevice(null, video, onResult);
         }
+        if (generation !== state.cameraGeneration) { controls.stop(); return; }
+        state.controls = controls;
 
         $('#startBtn').disabled = true;
         $('#stopBtn').disabled = false;
         showScanNotice('Live scanner running.');
       } catch (error) {
         showScanNotice(cameraErrorMessage(error), true);
+      } finally {
+        if (generation === state.cameraGeneration) {
+          state.cameraStarting = false;
+          renderAll();
+        }
       }
     }
 
     function stopScanner() {
+      state.cameraGeneration++;
+      state.cameraStarting = false;
       if (state.controls && typeof state.controls.stop === 'function') state.controls.stop();
       state.controls = null;
-      $('#startBtn').disabled = false;
+      const stream = $('#video').srcObject;
+      if (stream && stream.getTracks) stream.getTracks().forEach(track => track.stop());
+      $('#video').srcObject = null;
+      $('#startBtn').disabled = !state.loaded || state.submitting || state.uncertain || !state.inventory.length;
       $('#stopBtn').disabled = true;
     }
 
-    function handleCode(rawCode) {
+    function handleCode(rawCode, manual = false) {
+      if (!state.loaded || state.submitting || state.uncertain) return;
       const code = cleanSku(rawCode);
       const now = Date.now();
       if (!code) return;
-      if (code === state.lastCode && now - state.lastScanAt < 900) return;
+      const repeated = !manual && code === state.lastCode && now - state.lastScanAt < 1200;
       state.lastCode = code;
       state.lastScanAt = now;
+      if (repeated) return;
 
       const rug = findRug(code);
       if (!rug) {
@@ -598,13 +656,18 @@
       }
 
       const change = state.mode === 'remove' ? -1 : 1;
+      if (Number(rug.Quantity) + (state.batch[code] || 0) + change < 0) {
+        showScanFeedback('Not enough stock', code, 'error');
+        showScanNotice(`${code} cannot go below zero. Count was not changed.`, true);
+        return;
+      }
       state.batch[code] = (Number(state.batch[code]) || 0) + change;
       if (state.batch[code] === 0) delete state.batch[code];
       state.selectedSku = code;
       beep(change > 0 ? 880 : 440);
       vibrate(80);
       showScanFeedback(change > 0 ? 'Received +1' : 'Removed -1', code, change > 0 ? 'success' : 'remove');
-      showScanNotice(`${change > 0 ? 'Received' : 'Removed'} 1: ${code}`);
+      showScanNotice(`${change > 0 ? 'Receive' : 'Remove'} 1 pending: ${code}`);
       renderAll();
     }
 
@@ -626,21 +689,32 @@
     }
 
     async function submitBatch() {
+      if (state.submitting || state.loading || !state.loaded) return;
       const rows = Object.entries(state.batch)
         .filter(([, quantityChange]) => quantityChange !== 0)
         .map(([sku, quantityChange]) => ({ sku, quantityChange }));
 
       if (!rows.length) return;
-      $('#submitBtn').disabled = true;
+      state.submitting = true;
+      if (!state.requestId) state.requestId = window.crypto && crypto.randomUUID
+        ? crypto.randomUUID() : `batch-${Date.now()}-${Math.random().toString(36).slice(2, 14)}`;
+      stopScanner();
+      renderPending();
       showSubmitNotice('Submitting batch...');
 
       const response = await api('batchAdjustQuantity', {
         rows: JSON.stringify(rows),
-        notes: $('#notesInput').value || 'Mobile live scanner batch'
+        notes: $('#notesInput').value.slice(0, 500) || 'Mobile live scanner batch',
+        requestId: state.requestId
       });
+      state.submitting = false;
 
       if (!response.success) {
-        showSubmitNotice(response.message || 'Batch could not submit.', true);
+        state.uncertain = Boolean(response.uncertain);
+        if (!state.uncertain) state.requestId = '';
+        showSubmitNotice(state.uncertain
+          ? 'Save was not confirmed. Keep this page open and retry this batch; it will only be saved once.'
+          : response.message || 'Batch was not saved. Contact a manager.', true);
         renderPending();
         return;
       }
@@ -650,12 +724,16 @@
         if (index >= 0) state.inventory[index] = { ...updated, SKU: String(updated.SKU || '').toUpperCase() };
       });
       state.batch = {};
+      state.transactions = response.transactions || state.transactions;
+      state.requestId = '';
+      state.uncertain = false;
       $('#notesInput').value = '';
       showSubmitNotice(response.message || 'Batch submitted.');
       renderAll();
     }
 
     function clearBatch() {
+      if (state.submitting || state.uncertain) return;
       state.batch = {};
       showSubmitNotice('Batch cleared.');
       renderAll();
@@ -665,9 +743,12 @@
       $('#loadedCount').textContent = state.inventory.length;
       renderResults();
       renderPending();
-      $('#headerStatus').textContent = state.inventory.length
+      renderInventory();
+      renderTransactions();
+      $('#startBtn').disabled = !state.loaded || state.submitting || state.uncertain || state.cameraStarting || !state.inventory.length || Boolean(state.controls);
+      $('#headerStatus').textContent = state.loaded
         ? `${state.inventory.length} SKUs ready. ${state.mode === 'receive' ? 'Receiving' : 'Removing'} mode.`
-        : 'Load inventory, choose Receive or Remove, then start scanning.';
+        : state.loading ? 'Loading inventory...' : 'Inventory unavailable';
     }
 
     function renderResults() {
@@ -702,8 +783,12 @@
       const pieceCount = entries.reduce((sum, [, change]) => sum + Math.abs(Number(change)), 0);
       $('#pendingPieces').textContent = pieceCount;
       $('#pendingSkus').textContent = entries.length;
-      $('#submitBtn').disabled = entries.length === 0;
-      $('#clearBtn').disabled = entries.length === 0;
+      $('#submitBtn').disabled = entries.length === 0 || state.submitting || state.loading || !state.loaded;
+      $('#clearBtn').disabled = entries.length === 0 || state.submitting || state.uncertain;
+      $('#notesInput').disabled = state.submitting || state.uncertain;
+      $('#receiveModeBtn').disabled = state.submitting || state.uncertain;
+      $('#removeModeBtn').disabled = state.submitting || state.uncertain;
+      $('#manualInput').disabled = !state.loaded || state.submitting || state.uncertain;
 
       $('#pendingList').innerHTML = entries.map(([sku, change]) => {
         const rug = findRug(sku) || {};
@@ -717,8 +802,8 @@
             <div>
               <div class="pending-change ${change < 0 ? 'negative' : ''}">${change > 0 ? '+' : ''}${change}</div>
               <div class="small-actions">
-                <button class="secondary" type="button" data-dec="${escapeAttr(sku)}">-</button>
-                <button class="secondary" type="button" data-inc="${escapeAttr(sku)}">+</button>
+                <button class="secondary" type="button" aria-label="Decrease pending count" ${state.submitting || state.uncertain ? 'disabled' : ''} data-dec="${escapeAttr(sku)}">-</button>
+                <button class="secondary" type="button" aria-label="Increase pending count" ${state.submitting || state.uncertain ? 'disabled' : ''} data-inc="${escapeAttr(sku)}">+</button>
               </div>
             </div>
           </div>
@@ -734,6 +819,11 @@
     }
 
     function adjustPending(sku, amount) {
+      if (state.submitting || state.uncertain || !state.loaded) return;
+      if (Number(findRug(sku).Quantity) + (state.batch[sku] || 0) + amount < 0) {
+        showScanNotice(`${sku} cannot go below zero.`, true);
+        return;
+      }
       state.batch[sku] = (Number(state.batch[sku]) || 0) + amount;
       if (state.batch[sku] === 0) delete state.batch[sku];
       renderPending();
@@ -746,8 +836,11 @@
         const url = new URL(state.apiUrl);
         url.searchParams.set('callback', callbackName);
         url.searchParams.set('action', action);
-        url.searchParams.set('password', state.password);
         Object.entries(params).forEach(([key, value]) => url.searchParams.set(key, value));
+        if (url.toString().length > 7500) {
+          resolve({ success: false, message: 'Batch is too large. Reduce the pending SKUs and submit smaller batches.' });
+          return;
+        }
 
         const timeout = window.setTimeout(() => {
           cleanup();
@@ -771,7 +864,25 @@
           delete window[callbackName];
           script.remove();
         }
-      }).catch(error => ({ success: false, message: error.message || String(error) }));
+      }).catch(() => ({ success: false, uncertain: true, message: 'Unable to connect to inventory. Check your internet connection or contact a manager.' }));
+    }
+
+    function renderInventory() {
+      const query = $('#inventorySearch').value.trim().toLowerCase();
+      const rows = state.inventory.filter(rug => [rug.SKU, rug.Name, rug.Design, rug.Size, rug.Color]
+        .some(value => String(value || '').toLowerCase().includes(query)));
+      $('#inventorySummary').textContent = `${rows.length} SKUs | ${rows.reduce((sum, rug) => sum + Number(rug.Quantity), 0)} rugs`;
+      $('#inventoryBody').innerHTML = rows.map(rug => `<tr>${[rug.SKU, rug.Name, rug.Design, rug.Size, rug.Color, rug.Quantity]
+        .map(value => `<td>${escapeHtml(value)}</td>`).join('')}</tr>`).join('') || '<tr><td colspan="6">No rugs found.</td></tr>';
+    }
+
+    function renderTransactions() {
+      $('#transactionsBody').innerHTML = state.transactions.map(item => `<tr>
+        <td>${escapeHtml(new Date(item.Timestamp).toLocaleString())}</td><td>${escapeHtml(item.Action)}</td>
+        <td>${escapeHtml(item.SKU)}<br>${escapeHtml(item.Name)} ${escapeHtml(item.Design)}</td>
+        <td>${escapeHtml(item.Size)}</td><td>${escapeHtml(item.QuantityChange)}</td>
+        <td>${escapeHtml(item.PreviousQuantity)}</td><td>${escapeHtml(item.NewQuantity)}</td>
+        <td>${escapeHtml(item.Source)}<br>${escapeHtml(item.Notes)}</td></tr>`).join('') || '<tr><td colspan="8">No transactions yet.</td></tr>';
     }
 
     function findRug(sku) {

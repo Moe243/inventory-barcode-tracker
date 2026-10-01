@@ -6,7 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Lotus Rugs Inventory</title>
   <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@zxing/browser@0.1.5/umd/zxing-browser.min.js"></script>
+  <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
   <style>
     :root {
       --ink: #18212f;
@@ -405,7 +405,7 @@
       padding: 10px;
       text-align: center;
       overflow: hidden;
-      min-height: 150px;
+      min-height: 180px;
       display: grid;
       align-content: center;
       gap: 4px;
@@ -419,10 +419,11 @@
 
     .label svg {
       display: block;
-      width: 100%;
+      width: auto;
       max-width: 100%;
       height: auto;
-      max-height: 54px;
+      max-height: 84px;
+      margin: 0 auto;
     }
 
     .label span {
@@ -524,24 +525,15 @@
       .label {
         width: 3.4in;
         height: 1.8in;
+        min-height: 0;
       }
+
+      .label svg { max-height: 76px; }
     }
   </style>
 </head>
 <body>
-  <div id="auth" class="auth">
-    <h1>Lotus Rugs</h1>
-    <p>Warehouse inventory access</p>
-    <form id="loginForm">
-      <label>Password
-        <input id="passwordInput" type="password" autocomplete="current-password" required>
-      </label>
-      <div id="authNotice" class="notice"></div>
-      <button type="submit">Open inventory</button>
-    </form>
-  </div>
-
-  <div id="app" class="app" hidden>
+  <div id="app" class="app">
     <header class="topbar">
       <div class="brand">
         <h1>Lotus Rugs Inventory</h1>
@@ -554,8 +546,7 @@
       <nav class="tabs" aria-label="Inventory sections">
         <button class="tab active" data-tab="dashboard" type="button">Dashboard</button>
         <button class="tab" data-tab="add" type="button">Add Rug</button>
-        <button class="tab" data-tab="adjust" type="button">Scan / Count</button>
-        <button class="tab" data-tab="import" type="button">Import CSV</button>
+        <button class="tab" data-tab="import" type="button">Import CSV / Excel</button>
         <button class="tab" data-tab="barcodes" type="button">Barcodes</button>
         <button class="tab" data-tab="transactions" type="button">Transactions</button>
       </nav>
@@ -638,12 +629,6 @@
             <label>Quantity
               <input name="quantity" type="number" min="0" step="1" value="0" required>
             </label>
-            <label class="full">Existing SKU behavior
-              <select name="mode">
-                <option value="add">Add entered quantity to existing quantity</option>
-                <option value="replace">Replace existing quantity with entered quantity</option>
-              </select>
-            </label>
             <div class="full button-row">
               <button type="submit" name="saveMode" value="same">Save and add same name/design</button>
               <button type="submit" name="saveMode" value="new" class="secondary">Save and add new rug</button>
@@ -652,71 +637,24 @@
         </div>
       </section>
 
-      <section id="adjust" class="panel">
-        <div class="section">
-          <h2>Scan / Count</h2>
-          <div class="scan-grid">
-            <label>Find SKU by name, design, size, color, or SKU
-              <input id="scanSearch" placeholder="Search before counting">
-            </label>
-            <label>Target SKU
-              <select id="scanSkuSelect"></select>
-            </label>
-            <label>Action
-              <select id="scanDirection">
-                <option value="receive">Receive</option>
-                <option value="remove">Remove</option>
-              </select>
-            </label>
-          </div>
-          <div id="scanTargetCard" class="rug-card"></div>
-          <div class="count-box">
-            <div>
-              <span class="muted">Pending scan count</span>
-              <div id="pendingCount" class="count-number">0</div>
-            </div>
-            <div class="button-row">
-              <button id="manualCountBtn" type="button">Count one</button>
-              <button id="undoCountBtn" class="secondary" type="button">Undo</button>
-              <button id="resetCountBtn" class="secondary" type="button">Reset count</button>
-            </div>
-            <div class="button-row">
-              <button id="startScannerBtn" type="button">Start camera scanner</button>
-              <button id="photoScanBtn" class="secondary" type="button">Scan from photo</button>
-              <button id="stopScannerBtn" class="secondary" type="button" disabled>Stop scanner</button>
-            </div>
-            <input id="photoScanInput" class="camera-capture-input" type="file" accept="image/*" capture="environment">
-            <form id="manualScanForm" class="form-grid">
-              <label class="full">Type or hardware-scan barcode
-                <input id="manualScanInput" name="manualScanInput" placeholder="Scan or type SKU, then press Enter">
-              </label>
-            </form>
-            <div id="scanNotice" class="notice"></div>
-            <div class="scanner-frame">
-              <video id="scannerVideo" muted playsinline></video>
-            </div>
-          </div>
-          <form id="scanSubmitForm" class="form-grid">
-            <label class="full">Notes
-              <textarea name="notes" rows="3" placeholder="Receiving count, removal count, stock check, etc."></textarea>
-            </label>
-            <div class="full">
-              <button type="submit">Submit scanned count</button>
-            </div>
-          </form>
-        </div>
-      </section>
-
       <section id="import" class="panel">
         <div class="section">
-          <h2>Import CSV</h2>
-          <label>CSV file with headers: sku,name,design,size,color,quantity
-            <input id="csvFile" type="file" accept=".csv,text/csv">
+          <h2>Import CSV / Excel</h2>
+          <label>Inventory file
+            <input id="csvFile" type="file" accept=".csv,.xlsx,.xls,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel">
+          </label>
+          <label>Import mode
+            <select id="importMode">
+              <option value="create">Add new rugs; skip existing SKUs</option>
+              <option value="update">Add new rugs and replace existing SKU details and quantities</option>
+            </select>
           </label>
           <div class="toolbar">
             <button id="importBtn" type="button" disabled>Import preview rows</button>
             <button id="clearImportBtn" class="secondary" type="button">Clear preview</button>
           </div>
+          <div id="importNotice" class="notice" role="status"></div>
+          <ul id="importErrors"></ul>
           <div class="table-wrap">
             <table>
               <thead>
@@ -783,10 +721,13 @@
                   <th>Timestamp</th>
                   <th>Action</th>
                   <th>SKU</th>
+                  <th>Rug</th>
+                  <th>Size</th>
                   <th>Change</th>
                   <th>Previous</th>
                   <th>New</th>
                   <th>Notes</th>
+                  <th>Source</th>
                 </tr>
               </thead>
               <tbody id="transactionsBody"></tbody>
@@ -829,39 +770,16 @@
 
   <script>
     const state = {
-      password: '',
       inventory: [],
       transactions: [],
       csvRows: [],
+      mutating: false,
       currentTab: 'dashboard',
-      pendingScanCount: 0,
-      lastScannedCode: '',
-      lastScanAt: 0,
-      scannerControls: null,
-      scannerReader: null,
       labelSelection: {}
     };
 
     const $ = selector => document.querySelector(selector);
     const $$ = selector => Array.from(document.querySelectorAll(selector));
-
-    $('#loginForm').addEventListener('submit', async event => {
-      event.preventDefault();
-      const password = $('#passwordInput').value;
-      state.password = password;
-
-      const response = await api('validatePassword');
-      if (!response.success) {
-        state.password = '';
-        showAuthNotice(response.message || 'Wrong password.', true);
-        return;
-      }
-
-      showAuthNotice('');
-      $('#auth').hidden = true;
-      $('#app').hidden = false;
-      await loadAll();
-    });
 
     $$('.tab').forEach(button => {
       button.addEventListener('click', () => switchTab(button.dataset.tab));
@@ -877,18 +795,6 @@
     $('#newRugBtn').addEventListener('click', () => switchTab('add'));
     $('#printBtn').addEventListener('click', () => window.print());
     $('#inventoryBody').addEventListener('click', handleInventoryAction);
-    $('#scanSearch').addEventListener('input', renderScanOptions);
-    $('#scanSkuSelect').addEventListener('change', renderScanTarget);
-    $('#scanDirection').addEventListener('change', renderScanTarget);
-    $('#manualCountBtn').addEventListener('click', () => incrementPendingCount(getSelectedScanSku(), 'Manual count added.'));
-    $('#undoCountBtn').addEventListener('click', undoPendingCount);
-    $('#resetCountBtn').addEventListener('click', resetPendingCount);
-    $('#startScannerBtn').addEventListener('click', startScanner);
-    $('#photoScanBtn').addEventListener('click', startPhotoScan);
-    $('#photoScanInput').addEventListener('change', handlePhotoScan);
-    $('#stopScannerBtn').addEventListener('click', stopScanner);
-    $('#manualScanForm').addEventListener('submit', handleManualScan);
-    $('#scanSubmitForm').addEventListener('submit', submitScannedCount);
     $('#labelSearch').addEventListener('input', renderLabelPicker);
     $('#defaultLabelCount').addEventListener('change', renderLabelPicker);
     $('#selectVisibleLabelsBtn').addEventListener('click', selectVisibleLabels);
@@ -897,21 +803,22 @@
 
     $('#addForm').addEventListener('submit', async event => {
       event.preventDefault();
-      const form = new FormData(event.currentTarget);
+      const formElement = event.currentTarget;
+      const saveMode = event.submitter && event.submitter.value;
+      const form = new FormData(formElement);
       const rug = {
         sku: form.get('sku'),
         name: form.get('name'),
         design: form.get('design'),
         size: form.get('size'),
         color: form.get('color'),
-        quantity: Number(form.get('quantity')),
-        mode: form.get('mode')
+        quantity: form.get('quantity')
       };
       const response = await api('addOrUpdateRug', { rug });
       if (response.success) {
         upsertLocalRug(response.rug);
         if (response.sku) state.labelSelection[response.sku] = 1;
-        resetAddForm(event.currentTarget, event.submitter && event.submitter.value);
+        resetAddForm(formElement, saveMode);
         renderAllInventoryViews();
       }
       showNotice(response.message, !response.success);
@@ -920,11 +827,13 @@
     $('#csvFile').addEventListener('change', handleCsvFile);
     $('#clearImportBtn').addEventListener('click', clearImportPreview);
     $('#importBtn').addEventListener('click', async () => {
-      const response = await api('importInventory', { rows: state.csvRows });
+      if ($('#importMode').value === 'update' && !confirm('Replace existing SKU details and quantities with the values in this file?')) return;
+      const response = await api('importInventory', { rows: state.csvRows, mode: $('#importMode').value });
       if (response.success) {
         clearImportPreview();
         await loadAll();
-        switchTab('dashboard');
+        $('#importNotice').textContent = response.message;
+        $('#importErrors').innerHTML = (response.errors || []).map(item => `<li>Row ${Number(item.row)}: ${escapeHtml(item.message)}</li>`).join('');
       }
       showNotice(response.message, !response.success);
     });
@@ -939,7 +848,7 @@
           design: form.get('design'),
           size: form.get('size'),
           color: form.get('color'),
-          quantity: Number(form.get('quantity'))
+          quantity: form.get('quantity')
         }
       });
 
@@ -955,6 +864,8 @@
     $('#editModal').addEventListener('click', event => {
       if (event.target.id === 'editModal') closeEditModal();
     });
+
+    loadAll();
 
     async function loadAll() {
       showNotice('Loading inventory...');
@@ -973,6 +884,13 @@
     }
 
     async function api(action, payload = {}) {
+      const mutation = ['addOrUpdateRug', 'updateRug', 'adjustQuantity', 'deleteRug', 'importInventory'].includes(action);
+      if (mutation && state.mutating) return { success: false, message: 'Please wait for the current save to finish.' };
+      const buttons = mutation ? $$('button').map(button => [button, button.disabled]) : [];
+      if (mutation) {
+        state.mutating = true;
+        buttons.forEach(([button]) => button.disabled = true);
+      }
       return new Promise(resolve => {
         if (!window.google || !google.script || !google.script.run) {
           resolve({
@@ -983,42 +901,47 @@
         }
 
         const runner = google.script.run
-          .withSuccessHandler(response => resolve(response))
+          .withSuccessHandler(response => resolve(response || { success: false, message: 'No response from inventory. Refresh or contact a manager.' }))
           .withFailureHandler(error => {
             resolve({ success: false, message: error.message || String(error) });
           });
 
         switch (action) {
-          case 'validatePassword':
-            runner.validatePassword(state.password);
-            break;
           case 'getInitialData':
-            runner.apiGetInitialData(state.password);
+            runner.apiGetInitialData();
             break;
           case 'getInventory':
-            runner.apiGetInventory(state.password);
+            runner.apiGetInventory();
             break;
           case 'getTransactions':
-            runner.apiGetTransactions(state.password, payload.limit || 75);
+            runner.apiGetTransactions(payload.limit || 75);
             break;
           case 'addOrUpdateRug':
-            runner.apiAddOrUpdateRug(state.password, payload.rug || {});
+            runner.apiAddOrUpdateRug(payload.rug || {});
             break;
           case 'updateRug':
-            runner.apiUpdateRug(state.password, payload.rug || {});
+            runner.apiUpdateRug(payload.rug || {});
             break;
           case 'adjustQuantity':
-            runner.apiAdjustQuantity(state.password, payload.sku, Number(payload.quantityChange), payload.notes || '');
+            runner.apiAdjustQuantity(payload.sku, Number(payload.quantityChange), payload.notes || '');
             break;
           case 'deleteRug':
-            runner.apiDeleteRug(state.password, payload.sku);
+            runner.apiDeleteRug(payload.sku);
             break;
           case 'importInventory':
-            runner.apiImportInventory(state.password, payload.rows || []);
+            runner.apiImportInventory(payload.rows || [], payload.mode || 'create');
             break;
           default:
             resolve({ success: false, message: 'Unknown action.' });
         }
+        }).finally(() => {
+          if (mutation) {
+            state.mutating = false;
+            buttons.forEach(([button, disabled]) => { if (button.isConnected) button.disabled = disabled; });
+          }
+        }).then(response => {
+          if (mutation && response.success) loadTransactions();
+          return response;
         });
     }
 
@@ -1026,8 +949,6 @@
       state.currentTab = tabName;
       $$('.tab').forEach(button => button.classList.toggle('active', button.dataset.tab === tabName));
       $$('.panel').forEach(panel => panel.classList.toggle('active', panel.id === tabName));
-      if (tabName !== 'adjust') stopScanner();
-      if (tabName === 'adjust') renderScanOptions();
       if (tabName === 'barcodes') renderBarcodes();
       if (tabName === 'transactions') loadTransactions();
     }
@@ -1045,7 +966,6 @@
     function renderAllInventoryViews() {
       syncDashboardFilters();
       renderDashboard();
-      renderScanOptions();
       renderLabelPicker();
     }
 
@@ -1156,10 +1076,10 @@
         const barcodeValue = item.rug.BarcodeValue || item.rug.SKU;
         JsBarcode(`#barcode-${index}`, barcodeValue, {
           format: 'CODE128',
-          width: barcodeValue.length > 28 ? 1.05 : 1.25,
-          height: 42,
+          width: barcodeValue.length > 20 ? 1.25 : 2,
+          height: 54,
           displayValue: false,
-          margin: 2
+          margin: 14
         });
       });
     }
@@ -1170,12 +1090,15 @@
           <td>${formatDate(item.Timestamp)}</td>
           <td>${escapeHtml(item.Action)}</td>
           <td>${escapeHtml(item.SKU)}</td>
+          <td>${escapeHtml(item.Name)} ${escapeHtml(item.Design)}</td>
+          <td>${escapeHtml(item.Size)}</td>
           <td>${Number(item.QuantityChange || 0)}</td>
           <td>${Number(item.PreviousQuantity || 0)}</td>
           <td>${Number(item.NewQuantity || 0)}</td>
           <td>${escapeHtml(item.Notes)}</td>
+          <td>${escapeHtml(item.Source)}</td>
         </tr>
-      `).join('') || '<tr><td colspan="7">No transactions yet.</td></tr>';
+      `).join('') || '<tr><td colspan="10">No transactions yet.</td></tr>';
     }
 
     function filteredInventory() {
@@ -1191,226 +1114,6 @@
         (!size || rug.Size === size) &&
         (!color || rug.Color === color)
       );
-    }
-
-    function renderScanOptions() {
-      const previousSku = $('#scanSkuSelect').value;
-      const query = $('#scanSearch').value.trim().toLowerCase();
-      const matches = state.inventory.filter(rug =>
-        !query || [rug.SKU, rug.Name, rug.Design, rug.Size, rug.Color].some(value => String(value || '').toLowerCase().includes(query))
-      );
-
-      $('#scanSkuSelect').innerHTML = matches.map(rug => `
-        <option value="${escapeAttr(rug.SKU)}">${escapeHtml(rug.SKU)} - ${escapeHtml(rug.Name)} - ${escapeHtml(rug.Design)} - ${escapeHtml(rug.Size)} - ${escapeHtml(rug.Color)}</option>
-      `).join('');
-
-      const selectedStillVisible = matches.some(rug => rug.SKU === previousSku);
-      if (selectedStillVisible) $('#scanSkuSelect').value = previousSku;
-      renderScanTarget();
-    }
-
-    function renderScanTarget() {
-      const rug = getSelectedScanRug();
-      const card = $('#scanTargetCard');
-      $('#pendingCount').textContent = state.pendingScanCount;
-
-      if (!rug) {
-        card.innerHTML = '<strong>No SKU selected</strong><span>Search for a design, size, color, or SKU before counting.</span>';
-        return;
-      }
-
-      const direction = $('#scanDirection').value === 'remove' ? 'Remove' : 'Receive';
-      card.innerHTML = `
-        <strong>${escapeHtml(direction)}: ${escapeHtml(rug.SKU)} - ${escapeHtml(rug.Name)} ${escapeHtml(rug.Design)}</strong>
-        <span>Size: ${escapeHtml(rug.Size)} | Color: ${escapeHtml(rug.Color)} | Current quantity: ${Number(rug.Quantity || 0)}</span>
-      `;
-    }
-
-    async function startScanner() {
-      const rug = getSelectedScanRug();
-      if (!rug) {
-        showScanNotice('Choose a target SKU before starting the scanner.', true);
-        return;
-      }
-
-      if (!window.ZXingBrowser || !ZXingBrowser.BrowserMultiFormatReader) {
-        showScanNotice('Camera scanner library did not load. You can still use Count one or type/scan the barcode into the barcode box.', true);
-        return;
-      }
-
-      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-        showScanNotice('This browser is blocking camera access. Open the deployed Apps Script link directly in Safari or Chrome, then use Count one or the barcode box if camera is still unavailable.', true);
-        return;
-      }
-
-      stopScanner();
-      try {
-        state.scannerReader = new ZXingBrowser.BrowserMultiFormatReader();
-        state.scannerControls = await state.scannerReader.decodeFromVideoDevice(null, $('#scannerVideo'), result => {
-          if (!result) return;
-          const code = typeof result.getText === 'function' ? result.getText() : String(result.text || result);
-          handleScannedCode(code);
-        });
-        $('#startScannerBtn').disabled = true;
-        $('#stopScannerBtn').disabled = false;
-        showScanNotice('Scanner running. Point the camera at the selected SKU label.');
-      } catch (error) {
-        showScanNotice(cameraErrorMessage(error), true);
-      }
-    }
-
-    function stopScanner() {
-      if (state.scannerControls && typeof state.scannerControls.stop === 'function') {
-        state.scannerControls.stop();
-      }
-      state.scannerControls = null;
-      $('#startScannerBtn').disabled = false;
-      $('#stopScannerBtn').disabled = true;
-    }
-
-    function startPhotoScan() {
-      if (!getSelectedScanRug()) {
-        showScanNotice('Choose a target SKU before scanning a photo.', true);
-        return;
-      }
-      const input = $('#photoScanInput');
-      input.value = '';
-      input.click();
-    }
-
-    async function handlePhotoScan(event) {
-      const file = event.target.files && event.target.files[0];
-      if (!file) return;
-
-      if (!window.ZXingBrowser || !ZXingBrowser.BrowserMultiFormatReader) {
-        showScanNotice('Scanner library did not load. You can still use Count one or type/scan the barcode into the barcode box.', true);
-        return;
-      }
-
-      const objectUrl = URL.createObjectURL(file);
-      showScanNotice('Reading barcode from photo...');
-      try {
-        const reader = new ZXingBrowser.BrowserMultiFormatReader();
-        const result = await reader.decodeFromImageUrl(objectUrl);
-        const code = typeof result.getText === 'function' ? result.getText() : String(result.text || result);
-        handleScannedCode(code);
-      } catch (error) {
-        showScanNotice('Could not find a barcode in that photo. Retake it close, flat, bright, and make sure the whole barcode is visible.', true);
-      } finally {
-        URL.revokeObjectURL(objectUrl);
-        event.target.value = '';
-      }
-    }
-
-    function handleScannedCode(code) {
-      const cleanCode = String(code || '').trim().toUpperCase();
-      const now = Date.now();
-      if (!cleanCode) return;
-      if (cleanCode === state.lastScannedCode && now - state.lastScanAt < 1400) return;
-
-      state.lastScannedCode = cleanCode;
-      state.lastScanAt = now;
-      incrementPendingCount(cleanCode, `Scanned ${cleanCode}.`);
-    }
-
-    function handleManualScan(event) {
-      event.preventDefault();
-      const input = $('#manualScanInput');
-      const code = input.value;
-      input.value = '';
-      handleScannedCode(code);
-      input.focus();
-    }
-
-    function cameraErrorMessage(error) {
-      const name = error && error.name ? error.name : '';
-      const message = error && error.message ? error.message : String(error || '');
-      if (name === 'NotAllowedError' || /denied|not allowed|permission/i.test(message)) {
-        return 'Camera permission is blocked. Open the deployed Apps Script URL directly in your phone browser, allow camera permission for the site, and avoid opening it inside another app or iframe. You can still type/scan the SKU into the barcode box.';
-      }
-      if (name === 'NotFoundError' || /not found|no camera/i.test(message)) {
-        return 'No camera was found by this browser. You can still type/scan the SKU into the barcode box.';
-      }
-      if (name === 'NotReadableError' || /in use|could not start/i.test(message)) {
-        return 'The camera is already in use by another app or browser tab. Close other camera apps, then try again.';
-      }
-      return message || 'Camera could not start. You can still type/scan the SKU into the barcode box.';
-    }
-
-    function incrementPendingCount(scannedSku, successMessage) {
-      const targetSku = getSelectedScanSku();
-      if (!targetSku) {
-        showScanNotice('Choose a target SKU before counting.', true);
-        return;
-      }
-
-      const cleanScannedSku = String(scannedSku || '').trim().toUpperCase();
-      if (cleanScannedSku !== targetSku) {
-        showScanNotice(`Scanned ${cleanScannedSku}, but target is ${targetSku}. Count was not changed.`, true);
-        return;
-      }
-
-      state.pendingScanCount += 1;
-      renderScanTarget();
-      showScanNotice(successMessage || 'Count added.');
-    }
-
-    function undoPendingCount() {
-      state.pendingScanCount = Math.max(0, state.pendingScanCount - 1);
-      renderScanTarget();
-      showScanNotice('Last count removed.');
-    }
-
-    function resetPendingCount() {
-      state.pendingScanCount = 0;
-      renderScanTarget();
-      showScanNotice('Pending count reset.');
-    }
-
-    async function submitScannedCount(event) {
-      event.preventDefault();
-      const rug = getSelectedScanRug();
-      if (!rug) {
-        showScanNotice('Choose a target SKU before submitting.', true);
-        return;
-      }
-      if (state.pendingScanCount <= 0) {
-        showScanNotice('Scan or count at least one rug before submitting.', true);
-        return;
-      }
-
-      const direction = $('#scanDirection').value;
-      const quantityChange = direction === 'remove' ? -state.pendingScanCount : state.pendingScanCount;
-      const form = new FormData(event.currentTarget);
-      const notes = form.get('notes') || `${direction === 'remove' ? 'Removed' : 'Received'} by barcode scan batch`;
-      const response = await api('adjustQuantity', {
-        sku: rug.SKU,
-        quantityChange,
-        notes
-      });
-
-      if (response.success) {
-        state.pendingScanCount = 0;
-        event.currentTarget.reset();
-        upsertLocalRug(response.rug);
-        renderAllInventoryViews();
-      }
-      showScanNotice(response.message, !response.success);
-      showNotice(response.message, !response.success);
-    }
-
-    function getSelectedScanSku() {
-      return String($('#scanSkuSelect').value || '').trim().toUpperCase();
-    }
-
-    function getSelectedScanRug() {
-      return findRug(getSelectedScanSku());
-    }
-
-    function showScanNotice(message, isError = false) {
-      const notice = $('#scanNotice');
-      notice.textContent = message || '';
-      notice.className = `notice ${isError ? 'error' : message ? 'success' : ''}`;
     }
 
     function renderLabelPicker() {
@@ -1529,67 +1232,64 @@
     }
 
     async function handleCsvFile(event) {
+      clearImportReport();
+      state.csvRows = [];
+      $('#importBtn').disabled = true;
+      $('#csvPreviewBody').innerHTML = '';
       const file = event.target.files[0];
       if (!file) return;
-      const text = await file.text();
-      state.csvRows = parseCsv(text);
-      $('#importBtn').disabled = state.csvRows.length === 0;
-      $('#csvPreviewBody').innerHTML = state.csvRows.map(row => `
-        <tr>
-          <td>${escapeHtml(row.sku)}</td>
-          <td>${escapeHtml(row.name)}</td>
-          <td>${escapeHtml(row.design)}</td>
-          <td>${escapeHtml(row.size)}</td>
-          <td>${escapeHtml(row.color)}</td>
-          <td>${Number(row.quantity || 0)}</td>
-        </tr>
-      `).join('') || '<tr><td colspan="6">No valid rows found.</td></tr>';
-    }
-
-    function parseCsv(text) {
-      const lines = text.split(/\r?\n/).filter(line => line.trim());
-      if (lines.length < 2) return [];
-
-      const headers = splitCsvLine(lines[0]).map(header => header.trim().toLowerCase());
-      return lines.slice(1).map(line => {
-        const cells = splitCsvLine(line);
-        const record = {};
-        headers.forEach((header, index) => record[header] = cells[index] || '');
-        return {
-          sku: record.sku,
-          name: record.name || record.collection,
-          design: record.design || record.pattern,
-          size: record.size,
-          color: record.color,
-          quantity: Number(record.quantity || 0)
-        };
-      }).filter(row => row.name && row.design && row.size && row.color);
-    }
-
-    function splitCsvLine(line) {
-      const cells = [];
-      let current = '';
-      let inQuotes = false;
-      for (let i = 0; i < line.length; i++) {
-        const char = line[i];
-        const next = line[i + 1];
-        if (char === '"' && inQuotes && next === '"') {
-          current += '"';
-          i++;
-        } else if (char === '"') {
-          inQuotes = !inQuotes;
-        } else if (char === ',' && !inQuotes) {
-          cells.push(current);
-          current = '';
-        } else {
-          current += char;
-        }
+      $('#importNotice').textContent = 'Reading file...';
+      try {
+        if (!window.XLSX) throw new Error('File reader could not load. Check your connection and reload.');
+        if (file.size > 10 * 1024 * 1024) throw new Error('Use a file smaller than 10 MB.');
+        const data = /\.csv$/i.test(file.name) ? await file.text() : await file.arrayBuffer();
+        const workbook = XLSX.read(data, { type: typeof data === 'string' ? 'string' : 'array', raw: true });
+        const cells = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]], { header: 1, defval: '', raw: false, blankrows: true });
+        state.csvRows = mapImportRows(cells);
+        if (!state.csvRows.length || state.csvRows.length > 2000) throw new Error('Choose a file with 1 to 2000 rug rows.');
+        $('#importBtn').disabled = false;
+        $('#csvPreviewBody').innerHTML = state.csvRows.map(row => `
+          <tr>${[row.sku, row.name, row.design, row.size, row.color, row.quantity].map(value => `<td>${escapeHtml(value)}</td>`).join('')}</tr>
+        `).join('');
+        $('#importNotice').textContent = `${state.csvRows.length} rows ready for validation and import.`;
+      } catch (error) {
+        state.csvRows = [];
+        $('#importNotice').textContent = error.message || 'Unable to read this file.';
+        $('#importNotice').className = 'notice error';
       }
-      cells.push(current);
-      return cells.map(cell => cell.trim());
+    }
+
+    function mapImportRows(cells) {
+      const headerRow = cells.findIndex(row => row.some(value => String(value).trim()));
+      if (headerRow < 0) return [];
+      const aliases = {
+        sku: 'sku', name: 'name', rugname: 'name', collection: 'name',
+        design: 'design', pattern: 'design', designnumber: 'design',
+        size: 'size', color: 'color', colour: 'color', quantity: 'quantity', qty: 'quantity'
+      };
+      const headers = cells[headerRow].map(value => aliases[String(value).replace(/^\uFEFF/, '').trim().toLowerCase().replace(/[ _-]/g, '')]);
+      ['name', 'design', 'size', 'color'].forEach(header => {
+        if (!headers.includes(header)) throw new Error(`Missing column: ${header}.`);
+      });
+      const mapped = headers.filter(Boolean);
+      if (new Set(mapped).size !== mapped.length) throw new Error('Duplicate inventory columns in the file.');
+      return cells.slice(headerRow + 1).map((row, index) => {
+        if (!row.some(value => String(value).trim())) return null;
+        const record = { sku: '', quantity: 0, _rowNumber: headerRow + index + 2 };
+        headers.forEach((header, column) => { if (header) record[header] = String(row[column] ?? '').trim(); });
+        if (record.quantity === '') record.quantity = 0;
+        return record;
+      }).filter(Boolean);
+    }
+
+    function clearImportReport() {
+      $('#importNotice').textContent = '';
+      $('#importNotice').className = 'notice';
+      $('#importErrors').innerHTML = '';
     }
 
     function clearImportPreview() {
+      clearImportReport();
       state.csvRows = [];
       $('#csvFile').value = '';
       $('#csvPreviewBody').innerHTML = '';
@@ -1618,12 +1318,6 @@
       const notice = $('#notice');
       notice.textContent = message || '';
       notice.className = `notice ${isError ? 'error' : message ? 'success' : ''}`;
-    }
-
-    function showAuthNotice(message, isError = false) {
-      const notice = $('#authNotice');
-      notice.textContent = message || '';
-      notice.className = `notice ${isError ? 'error' : ''}`;
     }
 
     function escapeHtml(value) {

@@ -2,22 +2,29 @@ const CONFIG = {
   INVENTORY_SHEET: 'Inventory',
   TRANSACTIONS_SHEET: 'Transactions',
   INVENTORY_HEADERS: ['SKU', 'Name', 'Design', 'Size', 'Color', 'Quantity', 'BarcodeValue', 'CreatedAt', 'UpdatedAt'],
-  TRANSACTION_HEADERS: ['Timestamp', 'Action', 'SKU', 'QuantityChange', 'PreviousQuantity', 'NewQuantity', 'Notes'],
-  PASSWORD: 'lotus'
+  TRANSACTION_HEADERS: ['Timestamp', 'Action', 'SKU', 'QuantityChange', 'PreviousQuantity', 'NewQuantity', 'Notes', 'Name', 'Design', 'Size', 'Color', 'Source', 'RequestId']
 };
 
 function setupSheet() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  ensureSheet_(ss, CONFIG.INVENTORY_SHEET, CONFIG.INVENTORY_HEADERS);
-  ensureSheet_(ss, CONFIG.TRANSACTIONS_SHEET, CONFIG.TRANSACTION_HEADERS);
-  return jsonResponse_({ success: true, message: 'Sheets are ready.' });
+  requireOwner_();
+  const properties = PropertiesService.getScriptProperties();
+  const active = SpreadsheetApp.getActiveSpreadsheet();
+  if (!properties.getProperty('INVENTORY_SPREADSHEET_ID') && active) {
+    properties.setProperty('INVENTORY_SPREADSHEET_ID', active.getId());
+  }
+  return withLock_(() => {
+    setupSheetsQuietly_();
+    return { success: true, message: 'Inventory and Transactions sheets are ready.' };
+  });
 }
 
 function doGet(e) {
   const params = e && e.parameter ? e.parameter : {};
   if (params.callback) {
-    return jsonpResponse_(params.callback, handleApiAction_(params.action, params.password, params));
+    return jsonpResponse_(params.callback, handleWorkerAction_(params.action, params));
   }
+
+  if (params.action) return jsonResponse_(handleWorkerAction_(params.action, params));
 
   return HtmlService.createTemplateFromFile('Index')
     .evaluate()
@@ -28,62 +35,56 @@ function doGet(e) {
 function doPost(e) {
   try {
     const body = e && e.postData && e.postData.contents ? JSON.parse(e.postData.contents) : {};
-    return jsonResponse_(handleApiAction_(body.action, body.password, body));
+    return jsonResponse_(handleApiAction_(body.action, body));
   } catch (error) {
     return jsonResponse_({ success: false, message: error.message || String(error) });
   }
 }
 
-function validatePassword(password) {
-  return isPasswordValid_(password)
-    ? { success: true, message: 'Password accepted.' }
-    : { success: false, message: 'Wrong password.' };
+function apiGetInventory() {
+  return handleApiAction_('getInventory', {});
 }
 
-function apiGetInventory(password) {
-  return handleApiAction_('getInventory', password, {});
+function apiGetInitialData() {
+  return handleApiAction_('getInitialData', {});
 }
 
-function apiGetInitialData(password) {
-  return handleApiAction_('getInitialData', password, {});
+function apiAddOrUpdateRug(rug) {
+  return handleApiAction_('addOrUpdateRug', { rug });
 }
 
-function apiAddOrUpdateRug(password, rug) {
-  return handleApiAction_('addOrUpdateRug', password, { rug });
+function apiUpdateRug(rug) {
+  return handleApiAction_('updateRug', { rug });
 }
 
-function apiUpdateRug(password, rug) {
-  return handleApiAction_('updateRug', password, { rug });
+function apiAdjustQuantity(sku, quantityChange, notes) {
+  return handleApiAction_('adjustQuantity', { sku, quantityChange, notes });
 }
 
-function apiAdjustQuantity(password, sku, quantityChange, notes) {
-  return handleApiAction_('adjustQuantity', password, { sku, quantityChange, notes });
+function apiBatchAdjustQuantity(rows, notes, requestId) {
+  return handleApiAction_('batchAdjustQuantity', { rows, notes, requestId });
 }
 
-function apiBatchAdjustQuantity(password, rows, notes) {
-  return handleApiAction_('batchAdjustQuantity', password, { rows, notes });
+function apiMigrateExistingSkusToShortFormat() {
+  return handleApiAction_('migrateExistingSkusToShortFormat', {});
 }
 
-function apiMigrateExistingSkusToShortFormat(password) {
-  return handleApiAction_('migrateExistingSkusToShortFormat', password, {});
+function apiDeleteRug(sku) {
+  return handleApiAction_('deleteRug', { sku });
 }
 
-function apiDeleteRug(password, sku) {
-  return handleApiAction_('deleteRug', password, { sku });
+function apiImportInventory(rows, mode) {
+  return handleApiAction_('importInventory', { rows, mode });
 }
 
-function apiImportInventory(password, rows) {
-  return handleApiAction_('importInventory', password, { rows });
+function apiGetTransactions(limit) {
+  return handleApiAction_('getTransactions', { limit });
 }
 
-function apiGetTransactions(password, limit) {
-  return handleApiAction_('getTransactions', password, { limit });
-}
-
-function getInventory() {
+function getInventory_() {
   const sheet = getInventorySheet_();
   if (!sheet) {
-    return { success: true, message: 'Inventory loaded.', inventory: [] };
+    throw new Error('Inventory sheet is missing. A manager must run setupSheet in Apps Script.');
   }
   const values = sheet.getDataRange().getValues();
   if (values.length <= 1) {
@@ -98,11 +99,11 @@ function getInventory() {
   return { success: true, message: 'Inventory loaded.', inventory: rows };
 }
 
-function getInitialData() {
-  const inventoryResponse = getInventory();
+function getInitialData_() {
+  const inventoryResponse = getInventory_();
   if (!inventoryResponse.success) return inventoryResponse;
 
-  const transactionResponse = getTransactions(75);
+  const transactionResponse = getTransactions_(75);
   return {
     success: true,
     message: 'Inventory loaded.',
@@ -111,7 +112,7 @@ function getInitialData() {
   };
 }
 
-function addOrUpdateRug(rug) {
+function addOrUpdateRug_(rug) {
   return withLock_(() => {
     setupSheetsQuietly_();
     const sheet = getInventorySheet_();
@@ -128,31 +129,10 @@ function addOrUpdateRug(rug) {
         message: `Duplicate rug found: ${duplicate.SKU}. Edit that SKU instead of creating another.`
       };
     }
-    const now = new Date();
-    const mode = String(rug.mode || 'add').toLowerCase();
-
     if (rowNumber) {
-      const existing = getRugByRow_(sheet, rowNumber);
-      const previousQuantity = Number(existing.Quantity) || 0;
-      const incomingQuantity = Number(clean.Quantity) || 0;
-      const newQuantity = mode === 'replace' ? incomingQuantity : previousQuantity + incomingQuantity;
-
-      const updated = {
-        SKU: existing.SKU,
-        Name: clean.Name || existing.Name,
-        Design: clean.Design || existing.Design,
-        Size: clean.Size || existing.Size,
-        Color: clean.Color || existing.Color,
-        Quantity: newQuantity,
-        BarcodeValue: existing.BarcodeValue || existing.SKU,
-        CreatedAt: existing.CreatedAt || now,
-        UpdatedAt: now
-      };
-
-      writeInventoryRow_(sheet, rowNumber, updated);
-      logTransaction_('ADD_OR_UPDATE', clean.SKU, newQuantity - previousQuantity, previousQuantity, newQuantity, rug.notes || '');
-      return { success: true, message: 'Rug updated.', sku: clean.SKU, rug: serializeRug_(updated) };
+      throw new Error(`SKU ${clean.SKU} already exists. Use Edit to change that rug.`);
     }
+    const now = new Date();
 
     const created = {
       SKU: clean.SKU,
@@ -166,17 +146,17 @@ function addOrUpdateRug(rug) {
       UpdatedAt: now
     };
 
-    sheet.appendRow(inventoryObjectToRow_(created));
-    logTransaction_('CREATE', clean.SKU, created.Quantity, 0, created.Quantity, rug.notes || '');
+    commitChanges_([{ rowNumber: sheet.getLastRow() + 1, rug: created }],
+      [transaction_('CREATE', created, 0, created.Quantity, rug.notes || '', 'Manager')]);
     return { success: true, message: 'Rug added.', sku: clean.SKU, rug: serializeRug_(created) };
   });
 }
 
-function updateRug(rug) {
+function updateRug_(rug) {
   return withLock_(() => {
     setupSheetsQuietly_();
     const clean = normalizeRug_(rug);
-    if (!clean.SKU) throw new Error('SKU is required.');
+    validateRug_(clean);
 
     const sheet = getInventorySheet_();
     const rowNumber = findRowBySku_(sheet, clean.SKU);
@@ -203,58 +183,75 @@ function updateRug(rug) {
       UpdatedAt: new Date()
     };
 
-    if (Number.isNaN(updated.Quantity) || updated.Quantity < 0) throw new Error('Quantity must be zero or more.');
-    writeInventoryRow_(sheet, rowNumber, updated);
+    commitChanges_([{ rowNumber, rug: updated }],
+      [transaction_('EDIT', updated, existing.Quantity, updated.Quantity, 'Rug details edited', 'Manager')]);
     return { success: true, message: 'Rug details saved.', sku: clean.SKU, rug: serializeRug_(updated) };
   });
 }
 
-function adjustQuantity(sku, quantityChange, notes) {
+function adjustQuantity_(sku, quantityChange, notes) {
   return withLock_(() => {
     setupSheetsQuietly_();
     const cleanSku = String(sku || '').trim().toUpperCase();
     if (!cleanSku) throw new Error('SKU is required.');
-    if (!Number.isFinite(quantityChange) || quantityChange === 0) throw new Error('Quantity change must not be zero.');
+    quantityChange = quantityNumber_(quantityChange, true);
 
     const sheet = getInventorySheet_();
     const rowNumber = findRowBySku_(sheet, cleanSku);
     if (!rowNumber) throw new Error('SKU not found.');
 
     const existing = getRugByRow_(sheet, rowNumber);
-    const previousQuantity = Number(existing.Quantity) || 0;
+    const previousQuantity = quantityNumber_(existing.Quantity);
     const newQuantity = previousQuantity + quantityChange;
-    if (newQuantity < 0) throw new Error('Quantity cannot go below zero.');
+    if (!Number.isSafeInteger(newQuantity) || newQuantity < 0) throw new Error('Quantity cannot go below zero or exceed the quantity limit.');
 
     existing.Quantity = newQuantity;
     existing.UpdatedAt = new Date();
-    writeInventoryRow_(sheet, rowNumber, existing);
-    logTransaction_(quantityChange > 0 ? 'RECEIVE' : 'REMOVE', cleanSku, quantityChange, previousQuantity, newQuantity, notes || '');
+    commitChanges_([{ rowNumber, rug: existing }],
+      [transaction_(quantityChange > 0 ? 'RECEIVE' : 'REMOVE', existing, previousQuantity, newQuantity, notes || '', 'Manager')]);
 
     return { success: true, message: 'Quantity adjusted.', sku: cleanSku, previousQuantity, newQuantity, rug: serializeRug_(existing) };
   });
 }
 
-function batchAdjustQuantity(rows, notes) {
+function batchAdjustQuantity_(rows, notes, requestId, source) {
   return withLock_(() => {
     setupSheetsQuietly_();
     const parsedRows = typeof rows === 'string' ? JSON.parse(rows || '[]') : rows;
     if (!Array.isArray(parsedRows) || parsedRows.length === 0) throw new Error('No scan counts to submit.');
 
     const sheet = getInventorySheet_();
-    const updates = [];
+    if (parsedRows.length > 100) throw new Error('Submit at most 100 SKUs per batch.');
+    const grouped = new Map();
     parsedRows.forEach(row => {
       const cleanSku = String(row.sku || row.SKU || '').trim().toUpperCase();
-      const quantityChange = Number(row.quantityChange || row.change || 0);
+      const quantityChange = quantityNumber_(row.quantityChange ?? row.change, true);
       if (!cleanSku) throw new Error('SKU is required.');
-      if (!Number.isFinite(quantityChange) || quantityChange === 0) throw new Error(`Quantity change must not be zero for ${cleanSku}.`);
+      grouped.set(cleanSku, (grouped.get(cleanSku) || 0) + quantityChange);
+    });
+    const changes = Array.from(grouped.entries()).filter(([, change]) => change !== 0);
+    if (!changes.length) throw new Error('No quantity changes to submit.');
+    if (requestId) {
+      if (!/^[A-Za-z0-9-]{16,80}$/.test(requestId)) throw new Error('Invalid batch reference.');
+      const previous = findRequestTransactions_(requestId);
+      if (previous.length) {
+        const signature = items => JSON.stringify(items.slice().sort((a, b) => a[0].localeCompare(b[0])));
+        if (signature(previous.map(item => [item.SKU, item.QuantityChange])) !== signature(changes)) {
+          throw new Error('This batch reference was already used for different counts. Refresh inventory.');
+        }
+        return { success: true, message: 'Batch already saved.', rugs: changes.map(([sku]) => getRugByRow_(sheet, findRowBySku_(sheet, sku))), transactions: getTransactions_(75).transactions };
+      }
+    }
+    const updates = [];
+    changes.forEach(([cleanSku, quantityChange]) => {
 
       const rowNumber = findRowBySku_(sheet, cleanSku);
       if (!rowNumber) throw new Error(`${cleanSku} was not found.`);
 
       const existing = getRugByRow_(sheet, rowNumber);
-      const previousQuantity = Number(existing.Quantity) || 0;
+      const previousQuantity = quantityNumber_(existing.Quantity);
       const newQuantity = previousQuantity + quantityChange;
-      if (newQuantity < 0) throw new Error(`${cleanSku} cannot go below zero.`);
+      if (!Number.isSafeInteger(newQuantity) || newQuantity < 0) throw new Error(`${cleanSku} cannot go below zero or exceed the quantity limit.`);
 
       updates.push({ rowNumber, existing, cleanSku, quantityChange, previousQuantity, newQuantity });
     });
@@ -263,26 +260,21 @@ function batchAdjustQuantity(rows, notes) {
     updates.forEach(update => {
       update.existing.Quantity = update.newQuantity;
       update.existing.UpdatedAt = submittedAt;
-      writeInventoryRow_(sheet, update.rowNumber, update.existing);
-      logTransaction_(
-        update.quantityChange > 0 ? 'RECEIVE' : 'REMOVE',
-        update.cleanSku,
-        update.quantityChange,
-        update.previousQuantity,
-        update.newQuantity,
-        notes || 'Mobile scanner batch'
-      );
     });
+    commitChanges_(updates.map(update => ({ rowNumber: update.rowNumber, rug: update.existing })),
+      updates.map(update => transaction_(update.quantityChange > 0 ? 'RECEIVE' : 'REMOVE', update.existing,
+        update.previousQuantity, update.newQuantity, notes || 'Mobile scanner batch', source || 'Manager', requestId)));
 
     return {
       success: true,
       message: `Submitted ${updates.length} scanned SKU${updates.length === 1 ? '' : 's'}.`,
-      rugs: updates.map(update => serializeRug_(update.existing))
+      rugs: updates.map(update => serializeRug_(update.existing)),
+      transactions: getTransactions_(75).transactions
     };
   });
 }
 
-function deleteRug(sku) {
+function deleteRug_(sku) {
   return withLock_(() => {
     setupSheetsQuietly_();
     const cleanSku = String(sku || '').trim().toUpperCase();
@@ -293,75 +285,86 @@ function deleteRug(sku) {
     if (!rowNumber) throw new Error('SKU not found.');
 
     const existing = getRugByRow_(sheet, rowNumber);
-    sheet.deleteRow(rowNumber);
-    logTransaction_('DELETE', cleanSku, -Number(existing.Quantity || 0), Number(existing.Quantity || 0), 0, 'Deleted SKU');
+    const history = getSpreadsheet_().getSheetByName(CONFIG.TRANSACTIONS_SHEET);
+    const historyStart = history.getLastRow() + 1;
+    ensureRows_(history, historyStart);
+    const width = sheet.getLastColumn();
+    const previous = sheet.getRange(rowNumber, 1, 1, width).getValues();
+    let deleted = false;
+    try {
+      history.getRange(historyStart, 1, 1, CONFIG.TRANSACTION_HEADERS.length)
+        .setValues([transaction_('DELETE', existing, existing.Quantity, 0, 'Deleted SKU', 'Manager')]);
+      sheet.deleteRow(rowNumber);
+      deleted = true;
+      SpreadsheetApp.flush();
+    } catch (error) {
+      if (deleted) sheet.insertRowsBefore(rowNumber, 1);
+      sheet.getRange(rowNumber, 1, 1, width).setValues(previous);
+      history.getRange(historyStart, 1, 1, CONFIG.TRANSACTION_HEADERS.length).clearContent();
+      SpreadsheetApp.flush();
+      throw error;
+    }
 
     return { success: true, message: 'Rug deleted.', sku: cleanSku };
   });
 }
 
-function importInventory(rows) {
+function importInventory_(rows, mode) {
   return withLock_(() => {
     setupSheetsQuietly_();
     if (!Array.isArray(rows)) throw new Error('Rows must be an array.');
 
+    if (!rows.length || rows.length > 2000) throw new Error('Import between 1 and 2000 rows at a time.');
+    if (mode && mode !== 'create' && mode !== 'update') throw new Error('Invalid import mode.');
     let added = 0;
     let updated = 0;
     let skipped = 0;
     const sheet = getInventorySheet_();
-
-    rows.forEach(row => {
-      const clean = normalizeRug_(row);
-      if (!clean.SKU) clean.SKU = generateNextSku_(sheet, clean);
-      validateRug_(clean);
-
-      const rowNumber = findRowBySku_(sheet, clean.SKU);
-      const duplicateRowNumber = findRowByIdentity_(sheet, clean, clean.SKU);
-      if (duplicateRowNumber) {
+    const existingRows = sheet.getLastRow() > 1
+      ? sheet.getRange(2, 1, sheet.getLastRow() - 1, CONFIG.INVENTORY_HEADERS.length).getValues() : [];
+    const products = existingRows.map((row, index) => ({ rowNumber: index + 2, rug: rowToObject_(CONFIG.INVENTORY_HEADERS, row) }));
+    const seen = new Set();
+    const updates = [];
+    const transactions = [];
+    const errors = [];
+    let nextNumber = getNextRugNumber_(sheet);
+    let nextRow = sheet.getLastRow() + 1;
+    rows.forEach((row, index) => {
+      try {
+        const clean = normalizeRug_(row);
+        if (!clean.SKU) {
+          do { clean.SKU = formatShortSku_(nextNumber++); } while (products.some(item => item.rug.SKU === clean.SKU));
+        }
+        validateRug_(clean);
+        if (seen.has(clean.SKU)) throw new Error(`Duplicate SKU ${clean.SKU} in this file.`);
+        const existing = products.find(item => String(item.rug.SKU).toUpperCase() === clean.SKU);
+        if (existing && mode !== 'update') throw new Error(`SKU ${clean.SKU} exists. Select update mode to replace it.`);
+        const duplicate = products.find(item => item !== existing && identityKey_(item.rug) === identityKey_(clean));
+        if (duplicate) throw new Error(`Same rug already exists as ${duplicate.rug.SKU}.`);
+        const now = new Date();
+        const saved = { ...clean, BarcodeValue: clean.SKU, CreatedAt: existing ? existing.rug.CreatedAt : now, UpdatedAt: now };
+        const update = { rowNumber: existing ? existing.rowNumber : nextRow++, rug: saved };
+        updates.push(update);
+        transactions.push(transaction_('IMPORT', saved, existing ? existing.rug.Quantity : 0, saved.Quantity,
+          existing ? 'Import: explicit update' : 'Import: new rug', 'Manager'));
+        seen.add(clean.SKU);
+        if (existing) { existing.rug = saved; updated++; } else { products.push(update); added++; }
+      } catch (error) {
         skipped++;
-        return;
-      }
-      const now = new Date();
-
-      if (rowNumber) {
-        const existing = getRugByRow_(sheet, rowNumber);
-        const updatedRug = {
-          SKU: existing.SKU,
-          Name: clean.Name || existing.Name,
-          Design: clean.Design || existing.Design,
-          Size: clean.Size || existing.Size,
-          Color: clean.Color || existing.Color,
-          Quantity: Number(clean.Quantity) || 0,
-          BarcodeValue: existing.BarcodeValue || existing.SKU,
-          CreatedAt: existing.CreatedAt || now,
-          UpdatedAt: now
-        };
-        writeInventoryRow_(sheet, rowNumber, updatedRug);
-        logTransaction_('IMPORT_UPDATE', clean.SKU, updatedRug.Quantity - Number(existing.Quantity || 0), Number(existing.Quantity || 0), updatedRug.Quantity, 'CSV import');
-        updated++;
-      } else {
-        const newRug = {
-          SKU: clean.SKU,
-          Name: clean.Name,
-          Design: clean.Design,
-          Size: clean.Size,
-          Color: clean.Color,
-          Quantity: Number(clean.Quantity) || 0,
-          BarcodeValue: clean.SKU,
-          CreatedAt: now,
-          UpdatedAt: now
-        };
-        sheet.appendRow(inventoryObjectToRow_(newRug));
-        logTransaction_('IMPORT_CREATE', clean.SKU, newRug.Quantity, 0, newRug.Quantity, 'CSV import');
-        added++;
+        errors.push({ row: Number(row._rowNumber) || index + 2, sku: String(row.sku || row.SKU || ''), message: error.message });
       }
     });
-
-    return { success: true, message: `Import complete. Added ${added}, updated ${updated}, skipped ${skipped} duplicates.`, added, updated, skipped };
+    if (updates.length) commitChanges_(updates, transactions);
+    return { success: true, message: `Import complete. Added ${added}, updated ${updated}, skipped ${skipped}.`, added, updated, skipped, errors };
   });
 }
 
 function migrateExistingSkusToShortFormat() {
+  requireOwner_();
+  return migrateExistingSkusToShortFormat_();
+}
+
+function migrateExistingSkusToShortFormat_() {
   return withLock_(() => {
     setupSheetsQuietly_();
     const sheet = getInventorySheet_();
@@ -424,21 +427,22 @@ function migrateExistingSkusToShortFormat() {
   });
 }
 
-function getTransactions(limit) {
-  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(CONFIG.TRANSACTIONS_SHEET);
+function getTransactions_(limit) {
+  const sheet = getSpreadsheet_().getSheetByName(CONFIG.TRANSACTIONS_SHEET);
   if (!sheet) {
     return { success: true, message: 'Transactions loaded.', transactions: [] };
   }
-  const values = sheet.getDataRange().getValues();
-  if (values.length <= 1) {
+  const lastRow = sheet.getLastRow();
+  if (lastRow <= 1) {
     return { success: true, message: 'Transactions loaded.', transactions: [] };
   }
 
-  const headers = values[0];
-  const maxRows = Math.max(1, Number(limit || 75));
-  const transactions = values.slice(1)
+  const width = sheet.getLastColumn();
+  const headers = sheet.getRange(1, 1, 1, width).getValues()[0];
+  const maxRows = Math.min(500, Math.max(1, Math.floor(Number(limit) || 75)));
+  const count = Math.min(maxRows, lastRow - 1);
+  const transactions = sheet.getRange(lastRow - count + 1, 1, count, width).getValues()
     .filter(row => row.some(cell => String(cell || '').trim()))
-    .slice(-maxRows)
     .map(row => rowToObject_(headers, row))
     .reverse();
 
@@ -450,7 +454,7 @@ function include(filename) {
 }
 
 function setupSheetsQuietly_() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = getSpreadsheet_();
   ensureSheet_(ss, CONFIG.INVENTORY_SHEET, CONFIG.INVENTORY_HEADERS);
   ensureSheet_(ss, CONFIG.TRANSACTIONS_SHEET, CONFIG.TRANSACTION_HEADERS);
 }
@@ -460,7 +464,6 @@ function ensureSheet_(ss, name, headers) {
   if (!sheet) sheet = ss.insertSheet(name);
 
   const lastRow = sheet.getLastRow();
-  const lastColumn = Math.max(sheet.getLastColumn(), headers.length);
   if (lastRow === 0) {
     sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
     sheet.setFrozenRows(1);
@@ -468,38 +471,20 @@ function ensureSheet_(ss, name, headers) {
     return sheet;
   }
 
-  const values = sheet.getRange(1, 1, lastRow, lastColumn).getValues();
-  const currentHeaders = values[0].map(header => String(header || '').trim());
-  const hasHeaders = headers.length === currentHeaders.filter(Boolean).length &&
-    headers.every((header, index) => currentHeaders[index] === header);
-
-  if (!hasHeaders) {
-    const headerIndex = currentHeaders.reduce((index, header, columnIndex) => {
-      if (header) index[header] = columnIndex;
-      return index;
-    }, {});
-    const remappedRows = values.slice(1)
-      .filter(row => row.some(cell => String(cell || '').trim()))
-      .map(row => headers.map(header => {
-        if (Object.prototype.hasOwnProperty.call(headerIndex, header)) {
-          return row[headerIndex[header]];
-        }
-        return '';
-      }));
-
-    sheet.clearContents();
-    sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
-    if (remappedRows.length) {
-      sheet.getRange(2, 1, remappedRows.length, headers.length).setValues(remappedRows);
-    }
-    sheet.setFrozenRows(1);
-  }
-  sheet.autoResizeColumns(1, headers.length);
+  // Insert missing columns in place without clearing rows or custom columns.
+  let currentHeaders = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0].map(String);
+  headers.forEach((header, index) => {
+    if (currentHeaders[index] === header) return;
+    if (currentHeaders.includes(header)) throw new Error(`${name} columns are out of order. Restore the documented header order before saving.`);
+    sheet.insertColumnBefore(index + 1);
+    sheet.getRange(1, index + 1).setValue(header);
+    currentHeaders.splice(index, 0, header);
+  });
   return sheet;
 }
 
 function getInventorySheet_() {
-  return SpreadsheetApp.getActiveSpreadsheet().getSheetByName(CONFIG.INVENTORY_SHEET);
+  return getSpreadsheet_().getSheetByName(CONFIG.INVENTORY_SHEET);
 }
 
 function findRowBySku_(sheet, sku) {
@@ -566,7 +551,7 @@ function normalizeRug_(rug) {
     Design: String(rug.Design || rug.design || rug.pattern || '').trim(),
     Size: String(rug.Size || rug.size || '').trim(),
     Color: String(rug.Color || rug.color || '').trim(),
-    Quantity: Number(rug.Quantity ?? rug.quantity ?? 0)
+    Quantity: quantityNumber_(rug.Quantity !== undefined ? rug.Quantity : rug.quantity !== undefined ? rug.quantity : 0)
   };
 }
 
@@ -576,24 +561,30 @@ function validateRug_(rug) {
   if (!rug.Design) throw new Error('Design is required.');
   if (!rug.Size) throw new Error('Size is required.');
   if (!rug.Color) throw new Error('Color is required.');
-  if (!Number.isFinite(rug.Quantity) || rug.Quantity < 0) throw new Error('Quantity must be zero or more.');
+  if (!/^[A-Z0-9][A-Z0-9-]{0,79}$/.test(rug.SKU)) throw new Error('SKU must use letters, numbers, and hyphens (up to 80 characters).');
+  quantityNumber_(rug.Quantity);
 }
 
 function generateNextSku_(sheet, rug) {
   const nextNumber = getNextRugNumber_(sheet);
+  PropertiesService.getScriptProperties().setProperty('NEXT_RUG_NUMBER', String(nextNumber + 1));
   return formatShortSku_(nextNumber);
 }
 
 function getNextRugNumber_(sheet) {
-  if (!sheet || sheet.getLastRow() < 2) return 1;
-
-  const values = sheet.getRange(2, 1, sheet.getLastRow() - 1, 1).getValues().flat();
+  const properties = PropertiesService.getScriptProperties();
+  const reserved = Number(properties.getProperty('NEXT_RUG_NUMBER')) || 1;
+  const values = sheet && sheet.getLastRow() > 1 ? sheet.getRange(2, 1, sheet.getLastRow() - 1, 1).getValues().flat() : [];
+  if (!properties.getProperty('NEXT_RUG_NUMBER')) {
+    const history = getSpreadsheet_().getSheetByName(CONFIG.TRANSACTIONS_SHEET);
+    if (history && history.getLastRow() > 1) values.push(...history.getRange(2, 3, history.getLastRow() - 1, 1).getValues().flat());
+  }
   const maxNumber = values.reduce((max, sku) => {
     const rugNumber = parseRugNumber_(sku);
     return rugNumber ? Math.max(max, rugNumber) : max;
   }, 0);
 
-  return maxNumber + 1;
+  return Math.max(reserved, maxNumber + 1);
 }
 
 function formatShortSku_(number) {
@@ -629,7 +620,7 @@ function updateTransactionSkuReferences_(skuMap) {
   const oldSkus = Object.keys(skuMap || {});
   if (!oldSkus.length) return 0;
 
-  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(CONFIG.TRANSACTIONS_SHEET);
+  const sheet = getSpreadsheet_().getSheetByName(CONFIG.TRANSACTIONS_SHEET);
   if (!sheet || sheet.getLastRow() < 2) return 0;
 
   const rowCount = sheet.getLastRow() - 1;
@@ -668,59 +659,140 @@ function serializeRug_(rug) {
 }
 
 function logTransaction_(action, sku, quantityChange, previousQuantity, newQuantity, notes) {
-  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(CONFIG.TRANSACTIONS_SHEET);
-  sheet.appendRow([
-    new Date(),
-    action,
-    sku,
-    Number(quantityChange) || 0,
-    Number(previousQuantity) || 0,
-    Number(newQuantity) || 0,
-    notes || ''
-  ]);
+  const inventory = getInventorySheet_();
+  const row = findRowBySku_(inventory, sku);
+  const rug = row ? getRugByRow_(inventory, row) : { SKU: sku };
+  const sheet = getSpreadsheet_().getSheetByName(CONFIG.TRANSACTIONS_SHEET);
+  sheet.appendRow(transaction_(action, rug, previousQuantity, newQuantity, notes, 'Manager'));
 }
 
 function withLock_(callback) {
-  const lock = LockService.getDocumentLock();
+  const lock = LockService.getScriptLock();
+  lock.waitLock(30000);
   try {
-    lock.waitLock(30000);
     return callback();
   } finally {
     lock.releaseLock();
   }
 }
 
-function isPasswordValid_(password) {
-  return String(password || '') === CONFIG.PASSWORD;
+function requireOwner_() {
+  const active = Session.getActiveUser().getEmail();
+  if (!active || active !== Session.getEffectiveUser().getEmail()) {
+    throw new Error('Run this setup function from the owner\'s Apps Script editor.');
+  }
 }
 
-function handleApiAction_(action, password, body) {
-  if (!isPasswordValid_(password)) {
-    return { success: false, message: 'Invalid password.' };
-  }
+function getSpreadsheet_() {
+  const id = PropertiesService.getScriptProperties().getProperty('INVENTORY_SPREADSHEET_ID');
+  if (!id) throw new Error('Inventory is not configured. A manager must run setupSheet in the original spreadsheet\'s Apps Script editor.');
+  return SpreadsheetApp.openById(id);
+}
 
+function quantityNumber_(value, change) {
+  if (typeof value !== 'number' && (typeof value !== 'string' || !value.trim())) {
+    throw new Error('Quantity must be a whole number.');
+  }
+  const number = Number(value);
+  if (!Number.isSafeInteger(number) || (change ? number === 0 : number < 0)) {
+    throw new Error(change ? 'Quantity change must be a nonzero whole number.' : 'Quantity must be a whole number of zero or more.');
+  }
+  return number;
+}
+
+function transaction_(action, rug, previous, next, notes, source, requestId) {
+  return [new Date(), action, rug.SKU, next - previous, Number(previous), Number(next), String(notes || '').slice(0, 500),
+    rug.Name || '', rug.Design || '', rug.Size || '', rug.Color || '', source, requestId || ''];
+}
+
+function findRequestTransactions_(requestId) {
+  const sheet = getSpreadsheet_().getSheetByName(CONFIG.TRANSACTIONS_SHEET);
+  if (sheet.getLastRow() < 2) return [];
+  const matches = sheet.getRange(2, CONFIG.TRANSACTION_HEADERS.indexOf('RequestId') + 1, sheet.getLastRow() - 1, 1)
+    .createTextFinder(requestId).matchEntireCell(true).findAll();
+  return matches.map(cell => rowToObject_(CONFIG.TRANSACTION_HEADERS,
+    sheet.getRange(cell.getRow(), 1, 1, CONFIG.TRANSACTION_HEADERS.length).getValues()[0]));
+}
+
+function commitChanges_(updates, transactions) {
+  const inventory = getInventorySheet_();
+  const history = getSpreadsheet_().getSheetByName(CONFIG.TRANSACTIONS_SHEET);
+  const width = CONFIG.INVENTORY_HEADERS.length;
+  const historyStart = history.getLastRow() + 1;
+  ensureRows_(inventory, Math.max(...updates.map(update => update.rowNumber)));
+  ensureRows_(history, historyStart + transactions.length - 1);
+  const groups = [];
+  updates.slice().sort((a, b) => a.rowNumber - b.rowNumber).forEach(update => {
+    const last = groups[groups.length - 1];
+    if (last && last.start + last.updates.length === update.rowNumber) last.updates.push(update);
+    else groups.push({ start: update.rowNumber, updates: [update] });
+  });
+  groups.forEach(group => {
+    group.range = inventory.getRange(group.start, 1, group.updates.length, width);
+    group.previous = group.range.getValues();
+  });
+  const safeCells = row => row.map(value => typeof value === 'string' && value.startsWith('=') ? "'" + value : value);
+  const properties = PropertiesService.getScriptProperties();
+  const next = Math.max(Number(properties.getProperty('NEXT_RUG_NUMBER')) || 1,
+    ...updates.map(update => parseRugNumber_(update.rug.SKU) + 1));
+  properties.setProperty('NEXT_RUG_NUMBER', String(next));
+  // Sheets has no multi-tab transaction. Restore the affected cells on a caught write failure.
+  try {
+    groups.forEach(group => group.range.setValues(group.updates.map(update => safeCells(inventoryObjectToRow_(update.rug)))));
+    history.getRange(historyStart, 1, transactions.length, CONFIG.TRANSACTION_HEADERS.length).setValues(transactions.map(safeCells));
+    SpreadsheetApp.flush();
+  } catch (error) {
+    groups.forEach(group => group.range.setValues(group.previous));
+    history.getRange(historyStart, 1, transactions.length, CONFIG.TRANSACTION_HEADERS.length).clearContent();
+    SpreadsheetApp.flush();
+    throw error;
+  }
+}
+
+function ensureRows_(sheet, needed) {
+  const available = sheet.getMaxRows();
+  if (needed > available) sheet.insertRowsAfter(available, needed - available);
+}
+
+function handleWorkerAction_(action, body) {
+  try {
+    switch (action) {
+      case 'getInventory': return withLock_(() => getInventory_());
+      case 'getInitialData': return withLock_(() => getInitialData_());
+      case 'getTransactions': return withLock_(() => getTransactions_(body.limit));
+      case 'batchAdjustQuantity':
+        if (!body.requestId) throw new Error('Batch reference is required. Refresh the scanner.');
+        return batchAdjustQuantity_(body.rows, body.notes, body.requestId, 'Worker');
+      default: return { success: false, message: 'This action is available only to a manager.' };
+    }
+  } catch (error) {
+    return { success: false, message: error.message || String(error) };
+  }
+}
+
+function handleApiAction_(action, body) {
   try {
     switch (action) {
       case 'getInventory':
-        return getInventory();
+        return withLock_(() => getInventory_());
       case 'getInitialData':
-        return getInitialData();
+        return withLock_(() => getInitialData_());
       case 'addOrUpdateRug':
-        return addOrUpdateRug(body.rug || {});
+        return addOrUpdateRug_(body.rug || {});
       case 'updateRug':
-        return updateRug(body.rug || {});
+        return updateRug_(body.rug || {});
       case 'adjustQuantity':
-        return adjustQuantity(body.sku, Number(body.quantityChange), body.notes || '');
+        return adjustQuantity_(body.sku, body.quantityChange, body.notes || '');
       case 'batchAdjustQuantity':
-        return batchAdjustQuantity(body.rows || [], body.notes || '');
+        return batchAdjustQuantity_(body.rows || [], body.notes || '', body.requestId, 'Manager');
       case 'migrateExistingSkusToShortFormat':
-        return migrateExistingSkusToShortFormat();
+        return migrateExistingSkusToShortFormat_();
       case 'deleteRug':
-        return deleteRug(body.sku);
+        return deleteRug_(body.sku);
       case 'importInventory':
-        return importInventory(body.rows || []);
+        return importInventory_(body.rows || [], body.mode);
       case 'getTransactions':
-        return getTransactions(body.limit);
+        return withLock_(() => getTransactions_(body.limit));
       default:
         return { success: false, message: 'Unknown action.' };
     }
