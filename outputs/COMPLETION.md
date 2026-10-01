@@ -62,7 +62,7 @@ Actual production Sheet persistence remains unverified until the new Apps Script
 
 Automatic loading, Inventory/Transactions views, live camera decoding, target mismatch rejection, manual scans, mode colors, batch submission, and retry/error handling passed local integration checks using the real frontend and backend code.
 
-The production endpoint is in `docs/config.js`. The previously deployed backend still returned Invalid password during the read-only audit, so it requires the new version before anonymous worker loading can succeed.
+The production endpoint is in `docs/config.js`. The October 1 production audit confirmed the worker configuration still referenced an older deployment that returned Invalid password. Configuration now references the manager's existing current deployment, which responds anonymously with inventory and transactions. No replacement Apps Script deployment is needed for this connection fix.
 
 ## Manager Site
 
@@ -94,7 +94,7 @@ Test sources are in `tests/`. Generated screenshots and local result details are
 
 - GitHub source/Pages update is published separately from the Google deployment. See the chat close-out for the verified GitHub publish status.
 - Worker URL: https://moe243.github.io/inventory-barcode-tracker/scanner.html
-- Existing manager/API URL: https://script.google.com/macros/s/AKfycbzSniBOoKRH74rHd3KOAJi52I-HLVg5hvOztCH-UpNeD4ehOhWSF-Tnw9ZkBGAaGfiS-w/exec
+- Existing manager/API URL: https://script.google.com/macros/s/AKfycbxsELtpvQD2nVkjTg5Z9tly-lszCiLrXXMLcQOHQ6d5FWngCTGNwoLspdbQa2mpDVPa/exec
 - Google requires a new version of that existing deployment. See [SETUP.md](SETUP.md) for exact clicks and [Google's web-app deployment guide](https://developers.google.com/apps-script/guides/web) for execution/access behavior.
 
 ## Manual Action Required
